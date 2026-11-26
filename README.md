@@ -1,3 +1,12 @@
+> **Independent experimental fork:** maintained by José Pedro Trindade
+> ([jpereiratrindade](https://github.com/jpereiratrindade)), with AI-assisted
+> development. Modified on 2026-11-26 to add a local browser interface and
+> native/Podman processing integration. This fork is not an official OpenDroneMap
+> release and does not imply endorsement by its maintainers. Original code and
+> credits remain those of OpenDroneMap and its contributors. Distributed under
+> the [GNU AGPL v3](LICENSE), without warranty; see [GUI documentation](gui/README.md)
+> for scope, limitations, and validation.
+
 ![ODM Logo](https://github.com/OpenDroneMap/ODM/blob/master/odm.png?raw=true)
 
 An open source command line toolkit for processing aerial drone imagery. ODM turns simple 2D images into:

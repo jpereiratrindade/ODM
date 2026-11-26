@@ -44,7 +44,7 @@ function selection() {
   }
   $('dataset-title').textContent = project ? project.name : 'Onde está seu levantamento?';
   $('project-field').hidden = projects.length < 2;
-  if (!['running','stopping'].includes(lastState)) {
+  if (!lastState || lastState === 'idle') {
     $('progress-title').textContent = project ? 'Tudo pronto para criar' : 'Seu levantamento começa aqui';
     $('progress-note').textContent = project ? 'Escolha perfil e produtos acima' : 'Escolha uma pasta para continuar';
   }
@@ -55,6 +55,7 @@ function populateProjects(result) {
   const selected = result.selected || $('project').value;
   projects = result.projects;
   token = result.token;
+  $('processing-engine').textContent = result.engine === 'podman' ? 'Fotogrametria · ODM em Podman' : 'Fotogrametria · ambiente nativo';
   $('dataset-path').value = result.datasets || '';
   $('dataset-note').textContent = result.datasets ? 'Pasta de projetos: ' + result.datasets : 'Escolha a pasta do projeto. Seus arquivos ficam neste computador.';
   $('project').replaceChildren();
@@ -95,7 +96,9 @@ function render(state) {
   $('run').disabled = active || !$('project').value;
   $('stop').disabled = state.state !== 'running';
   $('stop').hidden = !active;
-  const stages = {dataset:0, opensfm:1, openmvs:1, odm_filterpoints:2, odm_meshing:2, mvs_texturing:2, mvstex:2, odm_georeferencing:3, odm_dem:3, odm_orthophoto:3, odm_report:4, odm_postprocess:4};
+  $('run-error').hidden = state.state !== 'failed';
+  $('run-error-message').textContent = state.error || 'Confira o diagnóstico técnico para identificar a causa.';
+  const stages = {dataset:0, split:0, merge:0, opensfm:1, openmvs:1, odm_filterpoints:2, odm_meshing:2, mvs_texturing:2, mvstex:2, odm_georeferencing:3, odm_dem:3, odm_orthophoto:3, odm_report:4, odm_postprocess:4};
   const index = stages[state.stage] ?? -1;
   document.querySelectorAll('#pipeline li').forEach((item, position) => {
     item.classList.toggle('done', state.state === 'completed' || (active && position < index));
@@ -226,7 +229,7 @@ async function poll() {
   try {
     const result = await api('status?since=' + cursor);
     if (render(result) && ['completed','failed','cancelled'].includes(result.state)) {
-      notice('Execução: ' + states[result.state] + '.', result.state === 'failed');
+      notice(result.error || 'Execução: ' + states[result.state] + '.', result.state === 'failed');
       await loadProjects();
     }
   } catch (error) { notice('Servidor indisponível: ' + error.message, true); $('run').disabled = true; }

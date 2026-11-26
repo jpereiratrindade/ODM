@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 
-from gui.server import Handler, Workspace
+from gui.server import Handler, Workspace, failure_message, select_engine
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -31,6 +31,37 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(command[command.index('--project-path') + 1], str(self.root))
         self.assertNotIn('--rerun-all', command)
 
+    def test_podman_mounts_only_selected_project_and_preserves_options(self):
+        workspace = Workspace(self.root, engine='podman')
+        command = workspace.prepare({'project': 'flight', 'quality': 'high', 'resolution': 3,
+                                     'skip-3dmodel': True, 'dtm': True})
+        self.assertEqual(command[:2], ['podman', 'run'])
+        self.assertIn('--pull=never', command)
+        self.assertEqual(command[command.index('--volume') + 1], f'{self.root}/flight:/datasets/flight')
+        self.assertEqual(command[command.index('--project-path') + 1], '/datasets')
+        self.assertIn('--skip-3dmodel', command)
+        self.assertIn('--dtm', command)
+        self.assertNotIn(str(self.root), command)
+
+    def test_auto_engine_uses_existing_image_and_error_is_explained(self):
+        with patch('gui.server.shutil.which', return_value='/usr/bin/podman'), \
+                patch('gui.server.Path.exists', return_value=False), \
+                patch('gui.server.subprocess.run') as run:
+            run.return_value.returncode = 0
+            self.assertEqual(select_engine('auto', 'local-odm'), 'podman')
+            run.assert_called_once_with(['podman', 'image', 'exists', 'local-odm'], capture_output=True, timeout=15)
+        message = failure_message([{'text': "ImportError: cannot import name '_find_unsafe' from 'shlex'"}])
+        self.assertIn('Python', message)
+        self.assertIn('Podman', message)
+
+    def test_podman_stop_stops_container(self):
+        workspace = Workspace(self.root, engine='podman')
+        with patch('gui.server.subprocess.run') as run:
+            run.return_value.returncode = 0
+            workspace.stop_container()
+        run.assert_called_once_with(['podman', 'stop', '--time', '10', workspace.container_name],
+                                    capture_output=True, timeout=30)
+
     def test_start_empty_then_select_dataset(self):
         workspace = Workspace()
         self.assertEqual(workspace.projects(), [])
@@ -48,6 +79,7 @@ class WorkspaceTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 workspace.configure(path)
         self.assertIsNone(workspace.configure(str(self.root)))
+        self.assertEqual(workspace.configure(str(self.root / 'flight' / 'images')), 'flight')
 
     def test_browse_folders_without_changing_selection(self):
         workspace = Workspace()
@@ -123,6 +155,7 @@ class WorkspaceTests(unittest.TestCase):
             return response.status, body
 
         self.assertEqual(request('GET', '/')[0], 200)
+        self.assertIn(b'GNU AFFERO GENERAL PUBLIC LICENSE', request('GET', '/LICENSE')[1])
         self.assertEqual(request('GET', '/wasm/gsd.wasm')[1][:4], b'\0asm')
         self.assertEqual(request('GET', '/../run.py')[0], 404)
         self.assertEqual(request('GET', '/api/projects', headers={'Host': 'evil.example'})[0], 403)

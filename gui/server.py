@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -20,10 +21,38 @@ QUALITIES = {'lowest', 'low', 'medium', 'high', 'ultra'}
 OUTPUTS = ('odm_orthophoto/odm_orthophoto.tif', 'odm_dem/dsm.tif',
            'odm_dem/dtm.tif', 'odm_georeferencing/odm_georeferenced_model.laz',
            'odm_texturing/odm_textured_model.obj', 'odm_report/report.pdf')
+ODM_IMAGE = 'docker.io/opendronemap/odm:latest'
+
+
+def select_engine(requested, image):
+    if requested != 'auto':
+        return requested
+    binaries = ROOT / 'SuperBuild' / 'install' / 'bin'
+    if all((binaries / name).exists() for name in ('odm_orthophoto', 'DensifyPointCloud')):
+        return 'native'
+    if shutil.which('podman'):
+        probe = subprocess.run(['podman', 'image', 'exists', image], capture_output=True, timeout=15)
+        if probe.returncode == 0:
+            return 'podman'
+    return 'native'
+
+
+def failure_message(logs):
+    text = '\n'.join(line['text'] for line in logs)
+    if "cannot import name '_find_unsafe'" in text:
+        return 'O Python do sistema é incompatível com esta versão do ODM. Use o motor Podman ou um ambiente nativo ODM configurado.'
+    if 'ModuleNotFoundError' in text or 'ImportError' in text:
+        return 'Faltam dependências no ambiente de processamento. Use o motor Podman ou o ambiente completo do ODM.'
+    if 'image not known' in text or 'image not found' in text:
+        return 'A imagem de processamento ODM não está instalada no Podman. Confira a instalação do motor.'
+    if 'Permission denied' in text or 'permission denied' in text:
+        return 'O processamento não conseguiu acessar arquivos ou gravar no projeto. Confira as permissões da pasta.'
+    errors = [line['text'] for line in logs if re.search(r'\[ERROR\]|Error:|Exception:', line['text'])]
+    return errors[-1][-500:] if errors else 'O processamento parou antes de concluir. Veja o diagnóstico técnico para identificar a causa.'
 
 
 class Workspace:
-    def __init__(self, datasets=None):
+    def __init__(self, datasets=None, engine='native', image=ODM_IMAGE):
         self.datasets = Path(datasets).resolve() if datasets is not None else None
         self.lock = threading.RLock()
         self.process = None
@@ -34,6 +63,11 @@ class Workspace:
         self.command = []
         self.exit_code = None
         self.stage = None
+        self.engine = engine
+        self.image = image
+        self.container_name = 'odm-gui-' + secrets.token_hex(8)
+        self.error = None
+        self.selected_project = None
 
     def browse(self, location=None):
         if location is not None and not isinstance(location, str):
@@ -62,6 +96,8 @@ class Workspace:
         if not path.is_absolute():
             raise ValueError('Informe caminho completo da pasta.')
         path = path.resolve()
+        if path.name == 'images' and path.is_dir():
+            path = path.parent
         if not path.is_dir():
             raise ValueError('Pasta não encontrada no computador do servidor.')
         selected = None
@@ -74,6 +110,7 @@ class Workspace:
             # Check access before replacing the current workspace.
             list(path.iterdir())
             self.datasets = path
+            self.selected_project = selected
         return selected
 
     def project_path(self, name):
@@ -112,8 +149,7 @@ class Workspace:
         resolution = float(resolution)
         if not math.isfinite(resolution) or not 0.1 <= resolution <= 100:
             raise ValueError('Resolução deve estar entre 0,1 e 100 cm/pixel.')
-        command = [sys.executable, '-u', str(ROOT / 'run.py'),
-                   '--project-path', str(self.datasets), path.name,
+        options = ['--project-path', '/datasets' if self.engine == 'podman' else str(self.datasets), path.name,
                    '--feature-quality', quality, '--pc-quality', quality,
                    '--orthophoto-resolution', str(resolution)]
         for flag in ('dsm', 'dtm', 'skip-3dmodel'):
@@ -121,8 +157,16 @@ class Workspace:
             if not isinstance(value, bool):
                 raise ValueError('Opção booleana inválida.')
             if value:
-                command.append('--' + flag)
-        return command
+                options.append('--' + flag)
+        if self.engine == 'podman':
+            if ':' in str(path):
+                raise ValueError('O caminho do projeto não pode conter dois-pontos no motor Podman.')
+            return ['podman', 'run', '--rm', '--pull=never', '--network=none',
+                    '--name', self.container_name, '--userns=keep-id',
+                    '--user', f'{os.getuid()}:{os.getgid()}', '--security-opt', 'label=disable',
+                    '--env', 'PYTHONUNBUFFERED=1', '--volume', f'{path}:/datasets/{path.name}',
+                    self.image] + options
+        return [sys.executable, '-u', str(ROOT / 'run.py')] + options
 
     def start(self, data):
         with self.lock:
@@ -135,9 +179,11 @@ class Workspace:
                                             start_new_session=os.name != 'nt')
             self.command = command
             self.project = data['project']
+            self.selected_project = self.project
             self.logs.clear()
             self.exit_code = None
             self.stage = None
+            self.error = None
             self.state = 'running'
             threading.Thread(target=self.collect, args=(self.process,), daemon=True).start()
 
@@ -154,21 +200,42 @@ class Workspace:
         with self.lock:
             self.exit_code = code
             self.state = 'cancelled' if self.state == 'stopping' else ('completed' if code == 0 else 'failed')
+            if self.state == 'failed':
+                self.error = failure_message(self.logs)
 
     def stop(self):
         with self.lock:
             if self.state != 'running' or self.process.poll() is not None:
                 return
             self.state = 'stopping'
-            if os.name == 'nt':
+            if self.engine == 'podman':
+                threading.Thread(target=self.stop_container).start()
+            elif os.name == 'nt':
                 self.process.terminate()
             else:
                 os.killpg(self.process.pid, signal.SIGTERM)
+
+    def stop_container(self):
+        try:
+            for _ in range(20):
+                result = subprocess.run(['podman', 'stop', '--time', '10', self.container_name],
+                                        capture_output=True, timeout=30)
+                if result.returncode == 0 or (self.process is not None and self.process.poll() is not None):
+                    return
+                # An immediate cancel can arrive before Podman registers the container.
+                threading.Event().wait(0.1)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            subprocess.run(['podman', 'kill', self.container_name], capture_output=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def snapshot(self, since=0):
         with self.lock:
             return {'state': self.state, 'project': self.project, 'command': self.command,
                     'stage': self.stage,
+                    'engine': self.engine, 'error': self.error,
                     'exit_code': self.exit_code,
                     'logs': [line for line in self.logs if line['id'] > since]}
 
@@ -198,6 +265,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, self.project_inventory())
             if self.path.startswith('/api/status?since='):
                 return self.send(200, self.server.workspace.snapshot(int(self.path.split('=', 1)[1])))
+            if self.path == '/LICENSE':
+                return self.send(200, (ROOT / 'LICENSE').read_bytes(), 'text/plain; charset=utf-8')
             files = {'/': ('index.html', 'text/html; charset=utf-8'),
                      '/style.css': ('style.css', 'text/css'),
                      '/app.js': ('app.js', 'text/javascript'),
@@ -243,6 +312,8 @@ class Handler(BaseHTTPRequestHandler):
     def project_inventory(self):
         workspace = self.server.workspace
         return {'projects': workspace.projects(), 'token': self.server.token,
+                'engine': workspace.engine,
+                'selected': workspace.selected_project,
                 'datasets': str(workspace.datasets) if workspace.datasets is not None else None}
 
 
@@ -250,14 +321,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--datasets', type=Path, help='Pasta inicial opcional; também pode ser indicada pela interface.')
     parser.add_argument('--port', type=int, default=8097)
+    parser.add_argument('--engine', choices=('auto', 'native', 'podman'), default='auto',
+                        help='Motor de processamento. Auto usa instalação nativa ou imagem Podman já instalada.')
+    parser.add_argument('--image', default=ODM_IMAGE, help='Imagem ODM local para o motor Podman (sem download automático).')
     args = parser.parse_args()
     if args.datasets is not None and not args.datasets.is_dir():
         parser.error('--datasets deve ser diretório existente.')
     with ThreadingHTTPServer(('127.0.0.1', args.port), Handler) as server:
-        server.workspace = Workspace(args.datasets)
+        server.workspace = Workspace(engine=select_engine(args.engine, args.image), image=args.image)
+        if args.datasets is not None:
+            server.workspace.configure(str(args.datasets.resolve()))
         server.token = secrets.token_urlsafe(32)
         server.authority = f'127.0.0.1:{server.server_port}'
         print(f'ODM experimental: http://{server.authority}', flush=True)
+        print(f'Motor de processamento: {server.workspace.engine}', flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
