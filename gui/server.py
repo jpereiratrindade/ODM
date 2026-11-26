@@ -18,6 +18,10 @@ import importlib.util
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import urlsplit, parse_qs
+if __package__:
+    from .cleanup import CleanupManager
+else:
+    from cleanup import CleanupManager
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = Path(__file__).resolve().parent / 'web'
@@ -84,6 +88,26 @@ class Workspace:
         self.preview_lock = threading.Lock()
         self.media_cache = {}
         self.media_lock = threading.Lock()
+        self.cleanup_manager = CleanupManager()
+
+    def cleanup(self, action, data):
+        with self.lock:
+            if self.state in ('running', 'stopping'):
+                raise ValueError('Limpeza e restauração bloqueadas durante processamento ativo. Aguarde concluir ou interrompa pela interface.')
+            root = self.project_path(data.get('project'))
+            if action == 'preview':
+                return self.cleanup_manager.preview(root)
+            if action == 'execute':
+                result = self.cleanup_manager.execute(root, data.get('plan'), data.get('confirmation'))
+            elif action == 'restore':
+                result = self.cleanup_manager.restore(root, data.get('backup'))
+            else:
+                raise ValueError('Ação de limpeza inválida.')
+            self.preview_cache.clear(); self.media_cache.clear()
+            self.state = 'idle'; self.project = None; self.command = []
+            self.stage = None; self.error = None; self.exit_code = None; self.logs.clear()
+            self.selected_project = root.name
+            return result
 
     def planning(self, project, name=None):
         photos = [file['name'] for file in self.media_list(project) if file['kind'] == 'photo']
@@ -545,6 +569,7 @@ class Handler(BaseHTTPRequestHandler):
                      '/viewer.js': ('viewer.js', 'text/javascript'),
                      '/media.js': ('media.js', 'text/javascript'),
                      '/planning.js': ('planning.js', 'text/javascript'),
+                     '/cleanup.js': ('cleanup.js', 'text/javascript'),
                      '/worker.js': ('worker.js', 'text/javascript'),
                      '/wasm/gsd.wasm': ('wasm/gsd.wasm', 'application/wasm')}
             if self.path not in files:
@@ -566,6 +591,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError('Pedido deve ser objeto JSON.')
             workspace = self.server.workspace
+            if self.path in ('/api/cleanup-preview', '/api/cleanup', '/api/cleanup-restore'):
+                action = {'/api/cleanup-preview': 'preview', '/api/cleanup': 'execute',
+                          '/api/cleanup-restore': 'restore'}[self.path]
+                return self.send(200, workspace.cleanup(action, data))
             if self.path == '/api/planning':
                 return self.send(200, workspace.planning(data.get('project'), data.get('file')))
             if self.path == '/api/media-list':

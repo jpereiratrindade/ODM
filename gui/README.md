@@ -31,12 +31,14 @@ admissível.
 
 ### Validação desta versão
 
-- Dezenove testes: quatorze de contrato do servidor, incluindo rotas, validação de entrada,
+- Vinte e cinco testes: quatorze de contrato do servidor, incluindo rotas, validação de entrada,
   restrição de origem, montagem Podman, interrupção, diagnóstico persistido,
   cache de prévias, inventário de mídia, requisições parciais de vídeo e proteção
   dos arquivos para download; cinco de prévias/metadados, verificando limites
   de resolução, nodata, amostragem, orientação EXIF, estimativa de sensor,
-  parâmetros ausentes e preservação dos originais.
+  parâmetros ausentes e preservação dos originais; seis de limpeza reversível,
+  cobrindo confirmação, mudanças desde a prévia, bloqueio durante execução,
+  restauração sem sobrescrita, links simbólicos e rollback de falha de movimentação.
 - Interface verificada em navegador Chromium em larguras de 390, 768 e 1440 px;
   cálculo WASM e apresentação de erros de ambiente também verificados.
 - Processamento real com ODM 3.6.2 na imagem local Podman, sobre cópia separada
@@ -199,6 +201,41 @@ tamanho/data dos arquivos. Download transmite o arquivo original em blocos.
 Galeria, filtros, inspeção e reprodução/seek de um WebM sintético foram validados
 em Chromium, incluindo larguras de 390, 768 e 1440 pixels.
 
+## Limpar processamento preservando os originais
+
+Em **Meu levantamento → Limpar processamento → Revisar limpeza e backups**,
+confira a lista de gerados e dos itens que permanecerão no lugar. Para executar,
+digite exatamente o nome do levantamento e confirme **Limpar processamento com
+backup**. Limpeza e restauração são bloqueadas durante qualquer processamento
+ativo gerenciado pelo servidor. O bloqueio não coordena execuções externas da CLI;
+não execute outro ODM sobre a mesma pasta durante a operação.
+
+A operação é **reversível**: move somente uma lista explícita de pastas e arquivos
+gerados pelo ODM, incluindo intermediários OpenSfM, malhas, texturas, nuvem,
+ortofoto, DEM, relatório e índices de execução. Não usa padrões genéricos de
+extensão nem apaga o projeto. `images/`, vídeos, máscaras de entrada, pontos de
+controle, arquivos de alinhamento, `cameras.json`, outras calibrações e itens
+desconhecidos permanecem no lugar. Links simbólicos de primeiro nível não são
+seguidos nem movidos. Arquivos guardados manualmente dentro de uma pasta de
+processamento listada são movidos junto, continuando disponíveis no backup.
+
+Os backups ficam em **`.odm-cleanup/<identificador>/`**, na pasta que contém os
+projetos, com manifesto, data e identificação do levantamento. São recuperáveis
+pela mesma tela mesmo depois de reiniciar o servidor. A pasta de backup é
+ignorada pelo Git. **Esta limpeza não libera espaço em disco:** os dados continuam
+armazenados no backup, fora do projeto, para permitir recomeçar sem perder os
+resultados anteriores.
+
+**Restaurar este backup** recoloca os itens, sem sobrescrever arquivos já existentes.
+Uma prévia vale por dez minutos e é invalidada se os gerados mudarem. Falhas de
+movimentação tentam reverter os itens já movidos; se o sistema não permitir a
+reversão, a mensagem indica onde conferir projeto e backup, sem apagar conteúdo.
+Não há exclusão definitiva automática de backups.
+
+Limpeza/restauração foram validadas somente em projetos descartáveis de teste,
+incluindo comparação byte a byte das fotos, vídeos, máscaras e arquivos de apoio.
+Nenhuma limpeza foi executada automaticamente nos levantamentos reais.
+
 ## WebAssembly
 
 ### Planejamento com dados do projeto
@@ -244,11 +281,12 @@ e serializa apenas as instruções aritméticas necessárias:
 
 ```bash
 python gui/build_wasm.py
-python -m unittest gui.test_server gui.test_preview -v
+python -m unittest gui.test_server gui.test_preview gui.test_cleanup -v
 node --check gui/web/app.js
 node --check gui/web/viewer.js
 node --check gui/web/media.js
 node --check gui/web/planning.js
+node --check gui/web/cleanup.js
 node --check gui/web/worker.js
 node -e "WebAssembly.instantiate(require('fs').readFileSync('gui/web/wasm/gsd.wasm')).then(({instance}) => console.log(instance.exports.gsd(100, 13.2, 8.8, 5472)))"
 ```

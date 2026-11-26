@@ -59,6 +59,7 @@ function selection() {
   loadHistory();
   $('command').hidden = true;
   $('run').disabled = !project || ['running','stopping'].includes(lastState);
+  syncCleanupControls(['running','stopping'].includes(lastState));
 }
 function populateProjects(result) {
   const selected = result.selected || $('project').value;
@@ -101,6 +102,7 @@ function render(state) {
   $('state').textContent = states[state.state] || state.state;
   $('state-note').textContent = state.project ? `${state.project}${state.exit_code === null ? '' : ' · saída ' + state.exit_code}` : 'Pronto para configurar';
   $('settings').disabled = active;
+  syncCleanupControls(active);
   $('dataset-settings').disabled = active;
   $('run').disabled = active || !$('project').value;
   $('stop').disabled = state.state !== 'running';

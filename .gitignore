@@ -35,3 +35,6 @@ azuresigning/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# Recoverable local processing backups (never source artifacts)
+.odm-cleanup/
