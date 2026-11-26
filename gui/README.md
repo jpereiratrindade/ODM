@@ -31,8 +31,10 @@ admissível.
 
 ### Validação desta versão
 
-- Dez testes de contrato do servidor, incluindo rotas, validação de entrada,
-  restrição de origem, montagem Podman e interrupção.
+- Quinze testes: treze de contrato do servidor, incluindo rotas, validação de entrada,
+  restrição de origem, montagem Podman, interrupção, diagnóstico persistido,
+  cache de prévias e proteção dos arquivos para download; dois de prévias,
+  verificando limites de resolução, nodata, amostragem e preservação dos originais.
 - Interface verificada em navegador Chromium em larguras de 390, 768 e 1440 px;
   cálculo WASM e apresentação de erros de ambiente também verificados.
 - Processamento real com ODM 3.6.2 na imagem local Podman, sobre cópia separada
@@ -105,8 +107,8 @@ A opção Interromper para o container; não deixa o processamento destacado.
 O seletor também aceita um caminho terminado em `images/`, usando seu projeto pai.
 Erros de ambiente e de acesso aparecem em uma mensagem visível, além dos logs.
 
-As três seções têm telas próprias: **Meu levantamento**, **Planejar um voo** e
-**Meus produtos**. Escolha um perfil visual (rápido, equilibrado ou detalhado),
+As quatro seções têm telas próprias: **Meu levantamento**, **Planejar um voo**,
+**Meus produtos** e **Visualizar resultados**. Escolha um perfil visual (rápido, equilibrado ou detalhado),
 marque os produtos desejados e clique **Criar ortofoto e produtos**. A ortofoto e
 a nuvem de pontos estão incluídas; os demais cartões adicionam produtos. O acompanhamento
 mostra grupos de etapas identificadas na saída real do ODM, sem percentual estimado.
@@ -123,10 +125,49 @@ interrupção do grupo de processos em Linux/macOS. Em Windows, a interrupção
 atinge o processo Python principal; processos nativos filhos podem continuar.
 
 O ODM grava resultados no projeto e pode retomar etapas existentes segundo suas
-regras habituais. O inventário mostra produtos conhecidos; não oferece upload,
-download, visualizador geográfico ou gerenciamento persistente de tarefas.
-Logs e estado da interface ficam em memória, com limite de 2.000 linhas. Fechar
+regras habituais. O inventário mostra produtos conhecidos e abre o visualizador.
+Não há upload, mapa-base externo ou gerenciador persistente de filas.
+Logs da sessão ficam em memória, com limite de 2.000 linhas. O resumo do último
+processamento é recuperado do `log.json` do projeto após reiniciar o servidor. Fechar
 a aba não interrompe a execução; encerrar o servidor com Ctrl+C solicita parada.
+
+## Visualizar resultados
+
+Em **Visualizar resultados**, escolha o levantamento e o produto e clique
+**Visualizar**. O botão de cada cartão em **Meus produtos** também abre a prévia.
+
+- **Ortofoto, DSM e DTM:** PNG gerado com GDAL a partir do raster real, reduzido
+  para no máximo 1.600 pixels no maior lado, com zoom, pan e metadados de dimensão,
+  CRS e tamanho de pixel. Elevações são exibidas em escala de cinza, ajustada à
+  faixa da prévia. Não é mapa de consulta cartográfica nem ferramenta de medição.
+- **Nuvem LAZ:** PDAL lê amostra de até 12.000 pontos, exibida em projeção 3D
+  ortográfica, com rotação por arraste e cores por altura relativa. A amostra
+  não substitui a nuvem original para análise ou medição.
+- **Modelo OBJ:** amostra dos vértices reais, com rotação; sem faces ou texturas.
+  O download do OBJ não inclui os arquivos MTL ou texturas acompanhantes.
+- **Relatório PDF:** aberto em painel próprio, usando o leitor PDF do navegador.
+- **Baixar arquivo original:** transferência do produto conhecido sem reduzir
+  resolução. Se o navegador não exibir o PDF, o download continua disponível.
+
+Os downloads exigem sessão local e ficam limitados aos produtos conhecidos no
+projeto; caminhos arbitrários e links simbólicos para fora do projeto são
+rejeitados. O servidor transfere arquivos em blocos. Prévias são calculadas no
+motor configurado, com montagem somente para leitura no Podman, timeout de 60
+segundos e cache de até seis produtos, invalidado por tamanho/data de alteração.
+No modo nativo, GDAL e PDAL precisam estar disponíveis no Python do servidor.
+
+### Diagnóstico do perfil rápido
+
+O perfil **Explorar rápido** reduz qualidade de extração e densificação. No
+levantamento de teste, o log registrou reconstrução densa com zero pontos, seguida
+de erro de segmentação (139) no filtro OpenMVS. A execução que funcionou usou o
+perfil **Equilíbrio**. Isso não demonstra corrupção das imagens.
+
+A interface traduz esse caso, remove códigos de cor ANSI das mensagens e mostra
+perfil/versão do último processamento. Ao mudar o perfil após uma falha, adiciona
+`--rerun-from opensfm` para regenerar intermediários: uma execução malsucedida
+pode não ter salvo `options.json`, necessário à detecção habitual de mudanças.
+As imagens originais são preservadas.
 
 ## WebAssembly
 
@@ -147,8 +188,9 @@ e serializa apenas as instruções aritméticas necessárias:
 
 ```bash
 python gui/build_wasm.py
-python -m unittest gui.test_server -v
+python -m unittest gui.test_server gui.test_preview -v
 node --check gui/web/app.js
+node --check gui/web/viewer.js
 node --check gui/web/worker.js
 node -e "WebAssembly.instantiate(require('fs').readFileSync('gui/web/wasm/gsd.wasm')).then(({instance}) => console.log(instance.exports.gsd(100, 13.2, 8.8, 5472)))"
 ```

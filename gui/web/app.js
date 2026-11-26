@@ -12,6 +12,7 @@ const productInfo = [
   ['Modelo 3D', 'Reconstrução com textura', 'odm_texturing/odm_textured_model.obj', '◇'],
   ['Relatório', 'Qualidade e resumo do processamento', 'odm_report/report.pdf', '▤']
 ];
+const productIds = ['ortho','cloud','dsm','dtm','model','report'];
 const states = {idle:'Aguardando', running:'Processando', stopping:'Interrompendo', completed:'Concluído', failed:'Falhou', cancelled:'Interrompido'};
 function notice(message, error = false) {
   $('notice').textContent = message;
@@ -39,7 +40,11 @@ function selection() {
     const note = document.createElement('p'); note.textContent = description;
     const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = available ? '✓ Arquivo disponível' : 'Ainda não gerado';
     li.append(visual, heading, note, badge);
-    if (available) { const file = document.createElement('small'); file.textContent = path; li.append(file); }
+    if (available) {
+      const file = document.createElement('small'); file.textContent = path; li.append(file);
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'outline result-open'; button.textContent = 'Visualizar →';
+      button.addEventListener('click', () => openViewer(productIds[productInfo.findIndex(p => p[2] === path)])); li.append(button);
+    }
     $('outputs').append(li);
   }
   $('dataset-title').textContent = project ? project.name : 'Onde está seu levantamento?';
@@ -48,6 +53,8 @@ function selection() {
     $('progress-title').textContent = project ? 'Tudo pronto para criar' : 'Seu levantamento começa aqui';
     $('progress-note').textContent = project ? 'Escolha perfil e produtos acima' : 'Escolha uma pasta para continuar';
   }
+  updateViewerProjects();
+  loadHistory();
   $('command').hidden = true;
   $('run').disabled = !project || ['running','stopping'].includes(lastState);
 }
@@ -122,7 +129,10 @@ function render(state) {
   lastState = state.state;
   return changed;
 }
-$('project').addEventListener('change', selection);
+$('project').addEventListener('change', async () => {
+  try { render(await api('project', {project:$('project').value}));selection(); }
+  catch (error) { notice(error.message, true); }
+});
 $('preview').addEventListener('click', async () => {
   if (!$('run-form').reportValidity()) return;
   try {
@@ -214,13 +224,14 @@ $('folder-use').addEventListener('click', async () => {
   finally { $('folder-use').disabled = false; }
 });
 function navigate() {
-  const view = ['projeto','planejamento','resultados'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'projeto';
-  for (const id of ['projeto','planejamento','resultados']) $(id).hidden = id !== view;
+  const view = ['projeto','planejamento','resultados','visualizar'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'projeto';
+  for (const id of ['projeto','planejamento','resultados','visualizar']) $(id).hidden = id !== view;
   document.querySelector('.hero').hidden = view !== 'projeto';
+  document.querySelector('.stats').hidden = view === 'visualizar';
   document.querySelectorAll('nav a').forEach(link => {
     if (link.hash === '#' + view) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current');
   });
-  $('view-title').textContent = {projeto:'Meu levantamento',planejamento:'Planejar um voo',resultados:'Meus produtos'}[view];
+  $('view-title').textContent = {projeto:'Meu levantamento',planejamento:'Planejar um voo',resultados:'Meus produtos',visualizar:'Visualizar resultados'}[view];
   window.scrollTo(0,0);
 }
 window.addEventListener('hashchange', navigate);

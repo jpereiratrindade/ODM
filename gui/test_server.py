@@ -62,6 +62,51 @@ class WorkspaceTests(unittest.TestCase):
         run.assert_called_once_with(['podman', 'stop', '--time', '10', workspace.container_name],
                                     capture_output=True, timeout=30)
 
+    def test_empty_dense_cloud_failure_and_persisted_history(self):
+        log = {'success': False, 'options': {'pc_quality': 'low'}, 'endTime': '2026-11-26',
+               'stages': [{'name': 'openmvs'}], 'error': {'code': 139},
+               'processes': [{'output': ['Densifying point-cloud completed: 0 points',
+                                         '\x1b[91m[ERROR] no valid point-cloud for the ROI estimation\x1b[0m']}]}
+        (self.root / 'flight' / 'log.json').write_text(json.dumps(log))
+        self.workspace.configure(str(self.root / 'flight'))
+        status = self.workspace.snapshot()
+        self.assertEqual(status['state'], 'failed')
+        self.assertEqual(status['stage'], 'openmvs')
+        self.assertIn('zero pontos', status['error'])
+        self.assertIn('Equilíbrio', status['error'])
+        self.assertNotIn('\x1b', status['error'])
+        self.assertEqual(self.workspace.history('flight')['quality'], 'low')
+        command = self.workspace.prepare({'project': 'flight', 'quality': 'medium'})
+        self.assertEqual(command[command.index('--rerun-from') + 1], 'opensfm')
+        self.assertNotIn('--rerun-from', self.workspace.prepare({'project': 'flight', 'quality': 'low'}))
+
+    def test_result_paths_reject_unknown_products_and_symlinks(self):
+        output = self.root / 'flight' / 'odm_report' / 'report.pdf'
+        output.parent.mkdir()
+        output.write_bytes(b'%PDF-test')
+        self.assertEqual(self.workspace.output_path('flight', 'report'), output)
+        for project, product in [('flight', '../log.json'), ('../flight', 'report'), ('flight', 'ortho')]:
+            with self.subTest(project=project, product=product), self.assertRaises(ValueError):
+                self.workspace.output_path(project, product)
+        if os.name != 'nt':
+            outside = self.root / 'outside.pdf'; outside.write_bytes(b'private')
+            output.unlink(); output.symlink_to(outside)
+            with self.assertRaises(ValueError):
+                self.workspace.output_path('flight', 'report')
+
+    def test_preview_cache_uses_file_revision(self):
+        output = self.root / 'flight' / 'odm_orthophoto' / 'odm_orthophoto.tif'
+        output.parent.mkdir(); output.write_bytes(b'first')
+        with patch('gui.server.subprocess.run') as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = json.dumps({'kind': 'raster', 'image': 'preview'})
+            self.workspace.view('flight', 'ortho')
+            self.workspace.view('flight', 'ortho')
+            self.assertEqual(run.call_count, 1)
+            output.write_bytes(b'new raster')
+            self.workspace.view('flight', 'ortho')
+            self.assertEqual(run.call_count, 2)
+
     def test_start_empty_then_select_dataset(self):
         workspace = Workspace()
         self.assertEqual(workspace.projects(), [])
@@ -161,6 +206,12 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(request('GET', '/api/projects', headers={'Host': 'evil.example'})[0], 403)
         self.assertEqual(request('POST', '/api/run', {'project': 'flight'})[0], 403)
         headers = {'Origin': f'http://{server.authority}', 'X-ODM-Token': server.token}
+        output = self.root / 'flight' / 'odm_report' / 'report.pdf'
+        output.parent.mkdir(); output.write_bytes(b'%PDF-test')
+        self.assertEqual(request('GET', '/api/output?project=flight&product=report')[0], 403)
+        download_headers = {'Cookie': 'odm_session=' + server.token}
+        self.assertEqual(request('GET', '/api/output?project=flight&product=report', headers=download_headers)[1], b'%PDF-test')
+        self.assertEqual(request('GET', '/api/output?project=flight&product=../LICENSE', headers=download_headers)[0], 400)
         self.assertEqual(request('POST', '/api/browse', {'path': str(self.root)}, headers)[0], 200)
         self.assertEqual(request('POST', '/api/browse', {'path': str(self.root)})[0], 403)
         server.workspace = Workspace()
@@ -170,6 +221,9 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(json.loads(body)['selected'], 'flight')
         self.assertEqual(request('POST', '/api/dataset', {'path': str(self.root / 'missing')}, headers)[0], 400)
         self.assertEqual(request('POST', '/api/preview', {'project': 'flight'}, headers)[0], 200)
+        self.assertEqual(request('POST', '/api/project', {'project': 'flight'}, headers)[0], 200)
+        self.assertEqual(server.workspace.selected_project, 'flight')
+        self.assertEqual(request('POST', '/api/project', {'project': '../outside'}, headers)[0], 400)
         self.assertEqual(request('POST', '/api/preview', [], headers)[0], 400)
         headers['Origin'] = 'http://evil.example'
         self.assertEqual(request('POST', '/api/run', {'project': 'flight'}, headers)[0], 403)

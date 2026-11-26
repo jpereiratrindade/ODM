@@ -14,6 +14,8 @@ import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie, CookieError
+from urllib.parse import urlsplit, parse_qs
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = Path(__file__).resolve().parent / 'web'
@@ -22,6 +24,8 @@ OUTPUTS = ('odm_orthophoto/odm_orthophoto.tif', 'odm_dem/dsm.tif',
            'odm_dem/dtm.tif', 'odm_georeferencing/odm_georeferenced_model.laz',
            'odm_texturing/odm_textured_model.obj', 'odm_report/report.pdf')
 ODM_IMAGE = 'docker.io/opendronemap/odm:latest'
+PRODUCTS = dict(zip(('ortho', 'dsm', 'dtm', 'cloud', 'model', 'report'), OUTPUTS))
+ANSI = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
 
 
 def select_engine(requested, image):
@@ -38,7 +42,9 @@ def select_engine(requested, image):
 
 
 def failure_message(logs):
-    text = '\n'.join(line['text'] for line in logs)
+    text = ANSI.sub('', '\n'.join(line['text'] for line in logs))
+    if 'no valid point-cloud' in text or re.search(r'Densifying point-cloud completed:\s*0 points', text):
+        return 'A reconstrução densa gerou zero pontos e o OpenMVS parou ao filtrar a nuvem vazia. Tente o perfil Equilíbrio; o perfil rápido reduz detalhes e pode não reconstruir este levantamento.'
     if "cannot import name '_find_unsafe'" in text:
         return 'O Python do sistema é incompatível com esta versão do ODM. Use o motor Podman ou um ambiente nativo ODM configurado.'
     if 'ModuleNotFoundError' in text or 'ImportError' in text:
@@ -47,7 +53,7 @@ def failure_message(logs):
         return 'A imagem de processamento ODM não está instalada no Podman. Confira a instalação do motor.'
     if 'Permission denied' in text or 'permission denied' in text:
         return 'O processamento não conseguiu acessar arquivos ou gravar no projeto. Confira as permissões da pasta.'
-    errors = [line['text'] for line in logs if re.search(r'\[ERROR\]|Error:|Exception:', line['text'])]
+    errors = [line for line in text.splitlines() if re.search(r'\[ERROR\]|Error:|Exception:', line)]
     return errors[-1][-500:] if errors else 'O processamento parou antes de concluir. Veja o diagnóstico técnico para identificar a causa.'
 
 
@@ -68,6 +74,66 @@ class Workspace:
         self.container_name = 'odm-gui-' + secrets.token_hex(8)
         self.error = None
         self.selected_project = None
+        self.preview_cache = {}
+        self.preview_lock = threading.Lock()
+
+    def output_path(self, project, product):
+        root = self.project_path(project)
+        if product not in PRODUCTS:
+            raise ValueError('Produto inválido.')
+        path = (root / PRODUCTS[product]).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise ValueError('Produto não disponível neste levantamento.')
+        return path
+
+    def history(self, project):
+        path = self.project_path(project) / 'log.json'
+        try:
+            if not path.is_file() or path.stat().st_size > 10_000_000:
+                return None
+            data = json.loads(path.read_text())
+            lines = [{'text': line} for process in data.get('processes', [])
+                     for line in process.get('output', [])]
+            return {'success': data.get('success'), 'quality': data.get('options', {}).get('pc_quality'),
+                    'stage': next((s.get('name') for s in reversed(data.get('stages', []))), None),
+                    'error': failure_message(lines) if data.get('success') is False else None,
+                    'exit_code': data.get('error', {}).get('code'), 'version': data.get('odmVersion'),
+                    'seconds': data.get('totalTime'), 'finished': bool(data.get('endTime'))}
+        except (ValueError, OSError, TypeError, AttributeError):
+            return None
+
+    def view(self, project, product):
+        path = self.output_path(project, product)
+        if product == 'report':
+            return {'kind': 'pdf'}
+        key = (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+        with self.preview_lock:
+            if key in self.preview_cache:
+                return self.preview_cache[key]
+            kind = 'points' if product == 'cloud' else 'mesh' if product == 'model' else 'raster'
+            script = Path(__file__).with_name('preview.py')
+            if self.engine == 'podman':
+                root = self.project_path(project)
+                if ':' in str(root):
+                    raise ValueError('O caminho do projeto não pode conter dois-pontos no motor Podman.')
+                command = ['podman', 'run', '--rm', '--pull=never', '--network=none',
+                           '--userns=keep-id', '--user', f'{os.getuid()}:{os.getgid()}',
+                           '--security-opt', 'label=disable', '--volume', f'{root}:/project:ro',
+                           '--entrypoint', 'python3', '-i', self.image, '-', kind,
+                           '/project/' + str(path.relative_to(root))]
+                result = subprocess.run(command, input=script.read_text(), capture_output=True,
+                                        text=True, timeout=60)
+            else:
+                result = subprocess.run([sys.executable, str(script), kind, str(path)],
+                                        capture_output=True, text=True, timeout=60)
+            if result.returncode:
+                raise ValueError('Não foi possível criar prévia. Verifique GDAL/PDAL no motor selecionado. O arquivo original continua disponível para download.')
+            data = json.loads(result.stdout)
+            data.update(file=path.name, bytes=path.stat().st_size)
+            if len(self.preview_cache) >= 6:
+                self.preview_cache.pop(next(iter(self.preview_cache)))
+            self.preview_cache[key] = data
+            return data
 
     def browse(self, location=None):
         if location is not None and not isinstance(location, str):
@@ -152,6 +218,10 @@ class Workspace:
         options = ['--project-path', '/datasets' if self.engine == 'podman' else str(self.datasets), path.name,
                    '--feature-quality', quality, '--pc-quality', quality,
                    '--orthophoto-resolution', str(resolution)]
+        previous = self.history(path.name)
+        if previous and previous['success'] is False and previous['quality'] != quality:
+            # Failed runs do not save options.json; avoid reusing low-quality intermediates.
+            options.extend(['--rerun-from', 'opensfm'])
         for flag in ('dsm', 'dtm', 'skip-3dmodel'):
             value = data.get(flag, False)
             if not isinstance(value, bool):
@@ -233,11 +303,21 @@ class Workspace:
 
     def snapshot(self, since=0):
         with self.lock:
-            return {'state': self.state, 'project': self.project, 'command': self.command,
+            result = {'state': self.state, 'project': self.project, 'command': self.command,
                     'stage': self.stage,
                     'engine': self.engine, 'error': self.error,
                     'exit_code': self.exit_code,
                     'logs': [line for line in self.logs if line['id'] > since]}
+            if self.state not in ('running', 'stopping') and self.selected_project and (
+                    self.state == 'idle' or self.selected_project != self.project):
+                result.update(state='idle', project=self.selected_project, stage=None,
+                              error=None, exit_code=None, command=[], logs=[])
+                history = self.history(self.selected_project)
+                if history and history['finished'] and history['success'] is not None:
+                    result.update(state='completed' if history['success'] else 'failed',
+                                  project=self.selected_project, stage=history['stage'],
+                                  error=history['error'], exit_code=history['exit_code'])
+            return result
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -249,7 +329,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; frame-ancestors 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'")
+        if self.path == '/api/projects' and code == 200:
+            self.send_header('Set-Cookie', f'odm_session={self.server.token}; HttpOnly; SameSite=Strict; Path=/')
         self.end_headers()
         self.wfile.write(body)
 
@@ -260,6 +342,29 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host():
             return self.send(403, {'error': 'Host inválido.'})
         try:
+            if urlsplit(self.path).path == '/api/output':
+                cookie = SimpleCookie()
+                try:
+                    cookie.load(self.headers.get('Cookie', ''))
+                except CookieError:
+                    return self.send(403, {'error': 'Sessão inválida.'})
+                session = cookie.get('odm_session')
+                if (session.value if session else self.headers.get('X-ODM-Token')) != self.server.token:
+                    return self.send(403, {'error': 'Sessão inválida.'})
+                query = parse_qs(urlsplit(self.path).query)
+                path = self.server.workspace.output_path(query.get('project', [''])[0], query.get('product', [''])[0])
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/pdf' if path.suffix == '.pdf' else 'application/octet-stream')
+                self.send_header('Content-Length', str(path.stat().st_size))
+                disposition = 'inline' if path.suffix == '.pdf' and query.get('inline') == ['1'] else 'attachment'
+                self.send_header('Content-Disposition', f'{disposition}; filename="{path.name}"')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
+                self.end_headers()
+                with path.open('rb') as file:
+                    shutil.copyfileobj(file, self.wfile, length=256 * 1024)
+                return
             if self.path == '/api/projects':
                 with self.server.workspace.lock:
                     return self.send(200, self.project_inventory())
@@ -270,6 +375,7 @@ class Handler(BaseHTTPRequestHandler):
             files = {'/': ('index.html', 'text/html; charset=utf-8'),
                      '/style.css': ('style.css', 'text/css'),
                      '/app.js': ('app.js', 'text/javascript'),
+                     '/viewer.js': ('viewer.js', 'text/javascript'),
                      '/worker.js': ('worker.js', 'text/javascript'),
                      '/wasm/gsd.wasm': ('wasm/gsd.wasm', 'application/wasm')}
             if self.path not in files:
@@ -291,6 +397,19 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError('Pedido deve ser objeto JSON.')
             workspace = self.server.workspace
+            if self.path == '/api/project':
+                with workspace.lock:
+                    if workspace.state in ('running', 'stopping'):
+                        raise ValueError('Aguarde encerrar execução antes de trocar levantamento.')
+                    path = workspace.project_path(data.get('project'))
+                    workspace.selected_project = path.name
+                    return self.send(200, workspace.snapshot())
+            if self.path == '/api/view':
+                return self.send(200, workspace.view(data.get('project'), data.get('product')))
+            if self.path == '/api/results':
+                project = data.get('project')
+                return self.send(200, {'history': workspace.history(project),
+                                      'project': project})
             if self.path == '/api/browse':
                 return self.send(200, workspace.browse(data.get('path')))
             if self.path == '/api/dataset':
@@ -306,7 +425,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self.send(404, {'error': 'Não encontrado.'})
             self.send(200, workspace.snapshot())
-        except (ValueError, TypeError, OSError) as error:
+        except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             self.send(400, {'error': str(error)})
 
     def project_inventory(self):
