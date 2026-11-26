@@ -47,6 +47,12 @@ docker run -ti --rm -v /datasets:/datasets opendronemap/odm --project-path /data
 
 ## Viewing Results
 
+An experimental local browser interface is available in [gui/](gui/README.md).
+Run `python3 gui/server.py` (or `pixi run gui`), open
+`http://127.0.0.1:8097`, and choose a local dataset folder in the interface
+to configure processing, follow CLI logs, inspect the
+output inventory, and estimate flight GSD in a WebAssembly worker.
+
 When the process finishes, the results will be organized as follows:
 
     |-- images/
