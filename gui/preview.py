@@ -6,6 +6,63 @@ from pathlib import Path
 import struct
 import tempfile
 import io
+import re
+import math
+
+
+def planning_metadata(path):
+    from PIL import Image
+    with Image.open(path) as image:
+        width, height = image.size
+        exif = image.getexif()
+        details = dict(exif)
+        try:
+            details.update(exif.get_ifd(34665))
+        except (KeyError, TypeError, AttributeError):
+            pass
+        def number(tag):
+            try:
+                value = float(details[tag])
+                return value if math.isfinite(value) and value > 0 else None
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                return None
+        focal, equivalent = number(37386), number(41989)
+        resolution, unit = number(41486), number(41488)
+        mm_per_unit = {2: 25.4, 3: 10, 4: 1, 5: .001}.get(unit)
+        sensor, sensor_source = None, None
+        if resolution and mm_per_unit:
+            sensor = width * mm_per_unit / resolution
+            sensor_source = 'Calculada do plano focal EXIF e largura da imagem'
+        elif focal and equivalent:
+            sensor = 36 * focal / equivalent
+            sensor_source = 'Estimativa pela focal equivalente de 35 mm (EXIF)'
+        gps = {}
+        try:
+            tags = exif.get_ifd(34853)
+            for value_tag, ref_tag, key in [(2, 1, 'latitude'), (4, 3, 'longitude')]:
+                if value_tag in tags:
+                    values = [float(value) for value in tags[value_tag]]
+                    gps[key] = (values[0] + values[1] / 60 + values[2] / 3600) * (-1 if tags.get(ref_tag) in ('S', 'W', b'S', b'W') else 1)
+            if 6 in tags:
+                below = tags.get(5) in (1, b'\x01')
+                gps['altitude'] = float(tags[6]) * (-1 if below else 1)
+        except (TypeError, ValueError, KeyError, ZeroDivisionError):
+            gps = {}
+        metadata = {name: str(details[tag]).replace('\x00', '').strip()[:160]
+                    for tag, name in [(271, 'make'), (272, 'model'), (36867, 'captured')]
+                    if tag in details}
+    relative = None
+    with open(path, 'rb') as file:
+        header = file.read(262144)
+    match = re.search(rb'\bRelativeAltitude\s*=\s*["\']([+-]?[\d.]+)["\']', header)
+    if match:
+        try:
+            value = float(match[1]); relative = value if math.isfinite(value) else None
+        except ValueError:
+            pass
+    return dict(metadata, width=width, height=height, focal_mm=focal,
+                focal_35_mm=equivalent, sensor_mm=sensor, sensor_source=sensor_source,
+                gps=gps, relative_altitude=relative)
 
 
 def photo_preview(path, thumbnail=False):
@@ -106,9 +163,9 @@ def mesh_preview(path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('kind', choices=('raster', 'points', 'mesh', 'photo', 'thumbnail'))
+    parser.add_argument('kind', choices=('raster', 'points', 'mesh', 'photo', 'thumbnail', 'planning'))
     parser.add_argument('path', type=Path)
     args = parser.parse_args()
     print(json.dumps({'raster': raster_preview, 'points': point_preview,
-                      'mesh': mesh_preview, 'photo': photo_preview,
+                      'mesh': mesh_preview, 'photo': photo_preview, 'planning': planning_metadata,
                       'thumbnail': lambda path: photo_preview(path, True)}[args.kind](args.path), allow_nan=False))

@@ -55,6 +55,7 @@ function selection() {
   }
   updateViewerProjects();
   updateMediaProjects();
+  updatePlanningProjects();
   loadHistory();
   $('command').hidden = true;
   $('run').disabled = !project || ['running','stopping'].includes(lastState);
@@ -166,6 +167,7 @@ try {
       $('engine').textContent = data.engine === 'WebAssembly' ? 'WASM ativo · GSD' : 'GSD · JavaScript';
       calculateGsd();
     } else if (data.type === 'result') {
+      if (!$('gsd-form').checkValidity()) return;
       $('gsd').textContent = data.value.toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2});
       $('gsd-method').textContent = data.engine + ' · Worker local';
     } else { $('gsd-method').textContent = data.error; }
@@ -173,7 +175,7 @@ try {
   worker.onerror = () => { $('engine').textContent = 'Worker indisponível'; $('gsd-method').textContent = 'Falha ao iniciar cálculo local.'; };
 } catch { $('engine').textContent = 'Worker indisponível'; }
 function calculateGsd() {
-  if (!$('gsd-form').reportValidity()) return;
+  if (!$('gsd-form').checkValidity()) { $('gsd').textContent='—'; $('gsd-method').textContent='Complete os parâmetros para calcular'; return; }
   worker?.postMessage({values:['altitude','sensor','focal','pixels'].map(id => Number($(id).value))});
 }
 $('gsd-form').addEventListener('submit', event => { event.preventDefault(); calculateGsd(); });

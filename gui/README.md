@@ -31,11 +31,12 @@ admissível.
 
 ### Validação desta versão
 
-- Dezessete testes: quatorze de contrato do servidor, incluindo rotas, validação de entrada,
+- Dezenove testes: quatorze de contrato do servidor, incluindo rotas, validação de entrada,
   restrição de origem, montagem Podman, interrupção, diagnóstico persistido,
   cache de prévias, inventário de mídia, requisições parciais de vídeo e proteção
-  dos arquivos para download; três de prévias, verificando limites de resolução,
-  nodata, amostragem, orientação EXIF e preservação dos originais.
+  dos arquivos para download; cinco de prévias/metadados, verificando limites
+  de resolução, nodata, amostragem, orientação EXIF, estimativa de sensor,
+  parâmetros ausentes e preservação dos originais.
 - Interface verificada em navegador Chromium em larguras de 390, 768 e 1440 px;
   cálculo WASM e apresentação de erros de ambiente também verificados.
 - Processamento real com ODM 3.6.2 na imagem local Podman, sobre cópia separada
@@ -200,6 +201,32 @@ em Chromium, incluindo larguras de 390, 768 e 1440 pixels.
 
 ## WebAssembly
 
+### Planejamento com dados do projeto
+
+**Planejar um voo** carrega automaticamente os parâmetros da foto de referência
+do levantamento selecionado. Também permite escolher outro levantamento/foto e
+recarregar os dados explicitamente, sem mudar o projeto em processamento.
+As informações são lidas de EXIF/XMP dos originais, inclusive antes de executar ODM:
+câmera, data de captura, dimensões, focal e equivalente de 35 mm, GPS e altura
+relativa DJI quando disponíveis. Cada campo indica a origem; valores podem ser
+editados manualmente. Não são médias das fotos ou um certificado de calibração.
+
+A largura do sensor é calculada da resolução do plano focal EXIF quando houver
+unidades válidas, ou estimada como `36 × focal / focal_equivalente_35mm`. Esta
+segunda opção é uma aproximação baseada no EXIF, explicitamente identificada.
+Parâmetros não disponíveis ficam em branco, sem substituir por valores fictícios.
+
+**Altitude GPS e altura relativa à decolagem não são altura acima do terreno.**
+A altura do cálculo fica para preenchimento manual. O botão **Usar altura
+relativa como aproximação** permite adotar explicitamente o valor XMP, com aviso
+para revisar a diferença de relevo em relação à decolagem. Não há consulta a
+modelo de terreno nem conversão automática de altitude GPS em altura de voo.
+Projeto somente com vídeo precisa primeiro de quadros com metadados de câmera.
+
+O fluxo foi validado com foto real DJI FC6310 (8,8 mm, 5472 × 3078, sensor
+estimado de 13,2 mm), incluindo GSD, origem dos valores, aproximação de altura,
+edição manual e troca para foto sem EXIF sem reaproveitar parâmetros anteriores.
+
 O cálculo de GSD roda de fato em WebAssembly dentro de um Web Worker. O módulo
 incluído usa quatro parâmetros `f64`, sem memória ou imports. A fórmula é:
 
@@ -221,6 +248,7 @@ python -m unittest gui.test_server gui.test_preview -v
 node --check gui/web/app.js
 node --check gui/web/viewer.js
 node --check gui/web/media.js
+node --check gui/web/planning.js
 node --check gui/web/worker.js
 node -e "WebAssembly.instantiate(require('fs').readFileSync('gui/web/wasm/gsd.wasm')).then(({instance}) => console.log(instance.exports.gsd(100, 13.2, 8.8, 5472)))"
 ```

@@ -85,6 +85,40 @@ class Workspace:
         self.media_cache = {}
         self.media_lock = threading.Lock()
 
+    def planning(self, project, name=None):
+        photos = [file['name'] for file in self.media_list(project) if file['kind'] == 'photo']
+        if not photos:
+            raise ValueError('Projeto sem fotos. Extraia quadros do vídeo antes de carregar parâmetros de câmera.')
+        name = name or next((n for n in photos if Path(n).suffix.lower() in ('.jpg', '.jpeg')), photos[0])
+        path = self.media_path(project, name)
+        if name not in photos:
+            raise ValueError('Selecione uma foto de referência.')
+        if importlib.util.find_spec('PIL'):
+            if __package__:
+                from .preview import planning_metadata
+            else:
+                from preview import planning_metadata
+            try:
+                data = planning_metadata(path)
+            except Exception as error:
+                raise ValueError('Não foi possível ler os metadados desta foto. Escolha outra foto ou informe os parâmetros manualmente.') from error
+        elif self.engine == 'podman':
+            root = self.project_path(project)
+            if ':' in str(root):
+                raise ValueError('Caminho não suportado pelo motor Podman.')
+            command = ['podman', 'run', '--rm', '--pull=never', '--network=none',
+                       '--security-opt', 'label=disable', '--userns=keep-id',
+                       '--user', f'{os.getuid()}:{os.getgid()}', '--volume', f'{root}:/project:ro',
+                       '--entrypoint', 'python3', '-i', self.image, '-', 'planning', '/project/images/' + name]
+            run = subprocess.run(command, input=Path(__file__).with_name('preview.py').read_text(),
+                                 text=True, capture_output=True, timeout=30)
+            if run.returncode:
+                raise ValueError('Não foi possível ler metadados da foto no motor selecionado.')
+            data = json.loads(run.stdout)
+        else:
+            raise ValueError('Leitura EXIF requer Pillow no servidor ou motor Podman.')
+        return dict(data, project=project, photo=name, photos=photos, source='EXIF/XMP da foto original')
+
     def media_path(self, project, name):
         root = self.project_path(project)
         images = (root / 'images').resolve()
@@ -510,6 +544,7 @@ class Handler(BaseHTTPRequestHandler):
                      '/app.js': ('app.js', 'text/javascript'),
                      '/viewer.js': ('viewer.js', 'text/javascript'),
                      '/media.js': ('media.js', 'text/javascript'),
+                     '/planning.js': ('planning.js', 'text/javascript'),
                      '/worker.js': ('worker.js', 'text/javascript'),
                      '/wasm/gsd.wasm': ('wasm/gsd.wasm', 'application/wasm')}
             if self.path not in files:
@@ -531,6 +566,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError('Pedido deve ser objeto JSON.')
             workspace = self.server.workspace
+            if self.path == '/api/planning':
+                return self.send(200, workspace.planning(data.get('project'), data.get('file')))
             if self.path == '/api/media-list':
                 return self.send(200, {'files': workspace.media_list(data.get('project'))})
             if self.path == '/api/photo':

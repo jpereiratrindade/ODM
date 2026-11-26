@@ -245,6 +245,7 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(json.loads(body)['selected'], 'flight')
         self.assertEqual(request('POST', '/api/dataset', {'path': str(self.root / 'missing')}, headers)[0], 400)
         self.assertEqual(request('POST', '/api/preview', {'project': 'flight'}, headers)[0], 200)
+        self.assertEqual(request('POST', '/api/planning', {'project': '../outside'}, headers)[0], 400)
         self.assertEqual(request('POST', '/api/project', {'project': 'flight'}, headers)[0], 200)
         self.assertEqual(server.workspace.selected_project, 'flight')
         self.assertEqual(request('POST', '/api/project', {'project': '../outside'}, headers)[0], 400)

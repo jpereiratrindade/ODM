@@ -6,10 +6,41 @@ import struct
 import tempfile
 import unittest
 
-from gui.preview import mesh_preview, raster_preview
+from gui.preview import mesh_preview, raster_preview, planning_metadata
 
 
 class PreviewTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('PIL'), 'Pillow not installed')
+    def test_planning_exif_sensor_estimate_and_relative_height(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'flight.jpg'
+            exif = Image.Exif(); exif[37386] = 8.8; exif[41989] = 24; exif[272] = 'Test camera'
+            Image.new('RGB', (800, 450)).save(path, exif=exif)
+            with path.open('ab') as file:
+                file.write(b'<drone-dji:Data drone-dji:RelativeAltitude="+110.30"/>')
+            before = path.read_bytes()
+            data = planning_metadata(path)
+            self.assertAlmostEqual(data['sensor_mm'], 13.2)
+            self.assertEqual(data['focal_mm'], 8.8)
+            self.assertEqual(data['relative_altitude'], 110.3)
+            self.assertIn('Estimativa', data['sensor_source'])
+            self.assertNotIn('altitude', data['gps'])
+            self.assertNotIn('height_agl', data)
+            self.assertEqual(path.read_bytes(), before)
+
+    @unittest.skipUnless(importlib.util.find_spec('PIL'), 'Pillow not installed')
+    def test_planning_does_not_invent_missing_parameters(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'no-exif.jpg'
+            Image.new('RGB', (640, 480)).save(path)
+            data = planning_metadata(path)
+            self.assertEqual(data['width'], 640)
+            for key in ['focal_mm', 'sensor_mm', 'focal_35_mm', 'relative_altitude']:
+                self.assertIsNone(data[key])
+            self.assertEqual(data['gps'], {})
+
     @unittest.skipUnless(importlib.util.find_spec('PIL'), 'Pillow not installed')
     def test_photo_orientation_exif_and_original_preserved(self):
         from PIL import Image
