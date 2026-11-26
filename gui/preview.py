@@ -5,6 +5,33 @@ import json
 from pathlib import Path
 import struct
 import tempfile
+import io
+
+
+def photo_preview(path, thumbnail=False):
+    from PIL import Image, ImageOps
+    with Image.open(path) as source:
+        width, height = source.size
+        exif = source.getexif()
+        details = dict(exif)
+        try:
+            details.update(exif.get_ifd(34665))
+        except (KeyError, TypeError, AttributeError):
+            pass
+        metadata = {name: str(details[tag]).replace('\x00', '').strip()[:160] for tag, name in
+                    [(271, 'Fabricante'), (272, 'Câmera'), (36867, 'Captura'),
+                     (33434, 'Exposição (s)'), (33437, 'Abertura'), (37386, 'Focal (mm)'),
+                     (34855, 'ISO')] if tag in details}
+        if details.get(274) in (5, 6, 7, 8):
+            width, height = height, width
+        bound = 360 if thumbnail else 2400
+        source.draft('RGB', (bound, bound))
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((bound, bound))
+        buffer = io.BytesIO()
+        image.convert('RGB').save(buffer, format='JPEG', quality=85)
+    return {'kind': 'photo', 'width': width, 'height': height, 'metadata': metadata,
+            'image': base64.b64encode(buffer.getvalue()).decode('ascii')}
 
 
 def raster_preview(path):
@@ -79,8 +106,9 @@ def mesh_preview(path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('kind', choices=('raster', 'points', 'mesh'))
+    parser.add_argument('kind', choices=('raster', 'points', 'mesh', 'photo', 'thumbnail'))
     parser.add_argument('path', type=Path)
     args = parser.parse_args()
     print(json.dumps({'raster': raster_preview, 'points': point_preview,
-                      'mesh': mesh_preview}[args.kind](args.path), allow_nan=False))
+                      'mesh': mesh_preview, 'photo': photo_preview,
+                      'thumbnail': lambda path: photo_preview(path, True)}[args.kind](args.path), allow_nan=False))

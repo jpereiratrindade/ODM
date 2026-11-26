@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ODM · Laboratório de fotogrametria</title>
-  <link rel="stylesheet" href="/style.css"><script src="/viewer.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/media.js" defer></script><script src="/viewer.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Ir para conteúdo</a>
@@ -17,6 +17,7 @@
       <a href="#planejamento">02 <span>Planejar um voo</span></a>
       <a href="#resultados">03 <span>Meus produtos</span></a>
       <a href="#visualizar">04 <span>Visualizar resultados</span></a>
+      <a href="#midias">05 <span>Fotos e vídeos</span></a>
     </nav>
     <div class="side-bottom"><small>SEU TERRITÓRIO, SEUS DADOS</small><p>Do voo ao território.<br>Processamento na sua máquina.</p><span>Fotos e processamento locais.<br>Sem enviar arquivos para nuvem.</span></div>
     <p class="local">● &nbsp; Ambiente local <span>v0.1</span></p>
@@ -75,9 +76,17 @@
         <p id="viewer-help" class="muted">Ortofotos e elevações: arraste para mover. Nuvens e modelos: arraste para girar. Use a roda do mouse ou os botões para ampliar.</p>
         <dl id="viewer-info" class="viewer-info"></dl>
       </section>
+      <section class="panel" id="midias" hidden>
+        <div class="heading"><div><small class="eyebrow">CONHEÇA SUAS IMAGENS DE ENTRADA</small><h2>Fotos e vídeos do levantamento</h2></div><span class="tag">Inspeção local</span></div>
+        <p class="muted">Explore os arquivos da pasta de imagens antes de processar. Clique para ampliar uma foto ou reproduzir um vídeo. Nenhum arquivo é enviado ou alterado.</p>
+        <div class="media-filters"><label>Levantamento<select id="media-project"></select></label><label>Buscar arquivo<input id="media-search" type="search" placeholder="Nome da foto ou vídeo…"></label><label>Mostrar<select id="media-kind"><option value="all">Fotos e vídeos</option><option value="photo">Somente fotos</option><option value="video">Somente vídeos</option></select></label><button id="media-refresh" type="button" class="outline">Atualizar</button></div>
+        <p id="media-status" role="status" aria-live="polite">Escolha um levantamento.</p>
+        <div id="media-grid" class="media-grid"></div><div class="media-pagination"><button id="media-previous-page" type="button" class="outline">← Anterior</button><span id="media-page"></span><button id="media-next-page" type="button" class="outline">Próxima →</button></div>
+      </section>
       <footer class="legal-footer"><div><strong>Baseado em OpenDroneMap e seus contribuidores.</strong><span>Fork independente de José Pedro Trindade · Modificado em 26/11/2026 com assistência de IA · Sem garantia.</span></div><nav aria-label="Licença e código-fonte"><a href="/LICENSE">Licença AGPL v3</a><a href="https://github.com/jpereiratrindade/ODM/tree/feat/local-gui">Código-fonte desta versão</a><a href="https://github.com/OpenDroneMap/ODM">Projeto original</a></nav></footer>
     </main>
   </div>
 </div>
+<dialog id="media-dialog" aria-labelledby="media-title"><div class="heading"><div><small class="eyebrow">INSPEÇÃO DO ARQUIVO</small><h2 id="media-title">Foto ou vídeo</h2></div><button id="media-close" type="button" class="outline" aria-label="Fechar inspeção">✕</button></div><div class="media-inspection"><div id="media-screen"><img id="media-photo" alt="" hidden><video id="media-video" controls preload="metadata" playsinline hidden></video><p id="media-loading" role="status">Carregando…</p></div><aside><p id="media-detail-status" role="status"></p><dl id="media-metadata" class="media-metadata"></dl><a id="media-download" class="download-link">Baixar original ↓</a><p class="muted">A foto exibida é uma prévia de até 2.400 pixels. Compatibilidade de vídeos depende dos codecs do navegador.</p></aside></div><div class="media-inspection-actions"><button id="media-back" type="button" class="outline">← Arquivo anterior</button><button id="media-zoom" type="button" class="outline">Ampliar foto</button><button id="media-forward" type="button" class="outline">Próximo arquivo →</button></div></dialog>
 <dialog id="folder-dialog" aria-labelledby="folder-title"><div class="heading"><div><small class="eyebrow">ARQUIVOS DESTE COMPUTADOR</small><h2 id="folder-title">Escolha seu levantamento</h2></div><button id="folder-close" class="outline" type="button" aria-label="Fechar seleção de pasta">✕</button></div><p class="muted">Navegue pelas pastas e escolha onde está o levantamento. Nenhum arquivo será enviado.</p><div id="folder-shortcuts"></div><div class="folder-location"><button id="folder-up" type="button" class="outline" aria-label="Pasta acima">↑</button><span id="folder-location"></span></div><p id="folder-error" role="status"></p><ul id="folder-list" aria-label="Pastas disponíveis"></ul><div class="folder-footer"><span id="folder-hint"></span><button id="folder-use" type="button">Usar esta pasta</button></div></dialog>
 </body></html>

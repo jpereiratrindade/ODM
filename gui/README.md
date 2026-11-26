@@ -31,10 +31,11 @@ admissível.
 
 ### Validação desta versão
 
-- Quinze testes: treze de contrato do servidor, incluindo rotas, validação de entrada,
+- Dezessete testes: quatorze de contrato do servidor, incluindo rotas, validação de entrada,
   restrição de origem, montagem Podman, interrupção, diagnóstico persistido,
-  cache de prévias e proteção dos arquivos para download; dois de prévias,
-  verificando limites de resolução, nodata, amostragem e preservação dos originais.
+  cache de prévias, inventário de mídia, requisições parciais de vídeo e proteção
+  dos arquivos para download; três de prévias, verificando limites de resolução,
+  nodata, amostragem, orientação EXIF e preservação dos originais.
 - Interface verificada em navegador Chromium em larguras de 390, 768 e 1440 px;
   cálculo WASM e apresentação de erros de ambiente também verificados.
 - Processamento real com ODM 3.6.2 na imagem local Podman, sobre cópia separada
@@ -107,8 +108,8 @@ A opção Interromper para o container; não deixa o processamento destacado.
 O seletor também aceita um caminho terminado em `images/`, usando seu projeto pai.
 Erros de ambiente e de acesso aparecem em uma mensagem visível, além dos logs.
 
-As quatro seções têm telas próprias: **Meu levantamento**, **Planejar um voo**,
-**Meus produtos** e **Visualizar resultados**. Escolha um perfil visual (rápido, equilibrado ou detalhado),
+As cinco seções têm telas próprias: **Meu levantamento**, **Planejar um voo**,
+**Meus produtos**, **Visualizar resultados** e **Fotos e vídeos**. Escolha um perfil visual (rápido, equilibrado ou detalhado),
 marque os produtos desejados e clique **Criar ortofoto e produtos**. A ortofoto e
 a nuvem de pontos estão incluídas; os demais cartões adicionam produtos. O acompanhamento
 mostra grupos de etapas identificadas na saída real do ODM, sem percentual estimado.
@@ -169,6 +170,34 @@ perfil/versão do último processamento. Ao mudar o perfil após uma falha, adic
 pode não ter salvo `options.json`, necessário à detecção habitual de mudanças.
 As imagens originais são preservadas.
 
+## Inspecionar fotos e vídeos
+
+Na aba **Fotos e vídeos**, escolha o levantamento para consultar os arquivos
+diretamente na pasta `images/`. Há busca por nome, filtro por tipo, páginas de
+24 itens e miniaturas carregadas sob demanda. A inspeção é somente leitura:
+não exclui arquivos nem altera a seleção de fotos do processamento.
+
+Clique em uma foto para abrir a prévia ampliada, alternar entre arquivos,
+consultar tamanho, dimensões e metadados EXIF de captura quando existentes
+(câmera, data, exposição, abertura, focal e ISO). A orientação EXIF é aplicada
+à prévia. Miniaturas têm até 360 pixels e prévias de inspeção até 2.400 pixels;
+Pillow é usado no servidor quando disponível, ou na imagem Podman como fallback.
+Formatos RAW/TIFF dependem dos decodificadores instalados; se não houver prévia,
+o original continua disponível para download.
+
+Vídeos são reproduzidos com controles nativos do navegador, sem autoplay, com
+suporte a requisições HTTP Range para avançar e retroceder. O formato/codec deve
+ser compatível com o navegador: não há transcodificação automática. Ao fechar
+a inspeção ou trocar de arquivo, a reprodução e o carregamento são interrompidos.
+Dimensões e duração aparecem quando o navegador conseguir ler os metadados.
+
+Somente mídias reconhecidas dentro da pasta de imagens são servidas, com sessão
+local autenticada; caminhos externos e links simbólicos para fora do projeto são
+rejeitados. O cache em memória retém até 48 prévias e respeita alterações de
+tamanho/data dos arquivos. Download transmite o arquivo original em blocos.
+Galeria, filtros, inspeção e reprodução/seek de um WebM sintético foram validados
+em Chromium, incluindo larguras de 390, 768 e 1440 pixels.
+
 ## WebAssembly
 
 O cálculo de GSD roda de fato em WebAssembly dentro de um Web Worker. O módulo
@@ -191,6 +220,7 @@ python gui/build_wasm.py
 python -m unittest gui.test_server gui.test_preview -v
 node --check gui/web/app.js
 node --check gui/web/viewer.js
+node --check gui/web/media.js
 node --check gui/web/worker.js
 node -e "WebAssembly.instantiate(require('fs').readFileSync('gui/web/wasm/gsd.wasm')).then(({instance}) => console.log(instance.exports.gsd(100, 13.2, 8.8, 5472)))"
 ```

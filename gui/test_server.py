@@ -107,6 +107,21 @@ class WorkspaceTests(unittest.TestCase):
             self.workspace.view('flight', 'ortho')
             self.assertEqual(run.call_count, 2)
 
+    def test_media_inventory_and_restricted_paths(self):
+        images = self.root / 'flight' / 'images'
+        (images / 'clip.mp4').write_bytes(b'video')
+        (images / 'notes.txt').write_text('not media')
+        self.assertEqual(len(self.workspace.media_list('flight')), 2)
+        self.assertEqual(self.workspace.media_list('flight')[0]['kind'], 'video')
+        for name in ['../notes.txt', 'notes.txt', '/etc/passwd', 'sub/file.jpg', 'a\\b.JPG']:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.workspace.media_path('flight', name)
+        if os.name != 'nt':
+            outside = self.root / 'private.JPG'; outside.write_bytes(b'private')
+            (images / 'escape.JPG').symlink_to(outside)
+            with self.assertRaises(ValueError):
+                self.workspace.media_path('flight', 'escape.JPG')
+
     def test_start_empty_then_select_dataset(self):
         workspace = Workspace()
         self.assertEqual(workspace.projects(), [])
@@ -212,6 +227,15 @@ class WorkspaceTests(unittest.TestCase):
         download_headers = {'Cookie': 'odm_session=' + server.token}
         self.assertEqual(request('GET', '/api/output?project=flight&product=report', headers=download_headers)[1], b'%PDF-test')
         self.assertEqual(request('GET', '/api/output?project=flight&product=../LICENSE', headers=download_headers)[0], 400)
+        video = self.root / 'flight' / 'images' / 'clip.mp4'; video.write_bytes(b'0123456789')
+        route = '/api/media?project=flight&file=clip.mp4&mode=original'
+        self.assertEqual(request('GET', route)[0], 403)
+        self.assertEqual(request('GET', route, headers=download_headers)[1], b'0123456789')
+        self.assertEqual(request('GET', route, headers=dict(download_headers, Range='bytes=2-5')), (206, b'2345'))
+        self.assertEqual(request('GET', route, headers=dict(download_headers, Range='bytes=-3')), (206, b'789'))
+        self.assertEqual(request('GET', route, headers=dict(download_headers, Range='bytes=7-')), (206, b'789'))
+        for invalid in ['bytes=40-', 'bytes=-0', 'bytes=6-2', 'bytes=0-1,3-4', 'nonsense']:
+            self.assertEqual(request('GET', route, headers=dict(download_headers, Range=invalid))[0], 416)
         self.assertEqual(request('POST', '/api/browse', {'path': str(self.root)}, headers)[0], 200)
         self.assertEqual(request('POST', '/api/browse', {'path': str(self.root)})[0], 403)
         server.workspace = Workspace()

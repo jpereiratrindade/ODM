@@ -54,6 +54,7 @@ function selection() {
     $('progress-note').textContent = project ? 'Escolha perfil e produtos acima' : 'Escolha uma pasta para continuar';
   }
   updateViewerProjects();
+  updateMediaProjects();
   loadHistory();
   $('command').hidden = true;
   $('run').disabled = !project || ['running','stopping'].includes(lastState);
@@ -224,14 +225,14 @@ $('folder-use').addEventListener('click', async () => {
   finally { $('folder-use').disabled = false; }
 });
 function navigate() {
-  const view = ['projeto','planejamento','resultados','visualizar'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'projeto';
-  for (const id of ['projeto','planejamento','resultados','visualizar']) $(id).hidden = id !== view;
+  const view = ['projeto','planejamento','resultados','visualizar','midias'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'projeto';
+  for (const id of ['projeto','planejamento','resultados','visualizar','midias']) $(id).hidden = id !== view;
   document.querySelector('.hero').hidden = view !== 'projeto';
-  document.querySelector('.stats').hidden = view === 'visualizar';
+  document.querySelector('.stats').hidden = ['visualizar','midias'].includes(view);
   document.querySelectorAll('nav a').forEach(link => {
     if (link.hash === '#' + view) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current');
   });
-  $('view-title').textContent = {projeto:'Meu levantamento',planejamento:'Planejar um voo',resultados:'Meus produtos',visualizar:'Visualizar resultados'}[view];
+  $('view-title').textContent = {projeto:'Meu levantamento',planejamento:'Planejar um voo',resultados:'Meus produtos',visualizar:'Visualizar resultados',midias:'Fotos e vídeos'}[view];
   window.scrollTo(0,0);
 }
 window.addEventListener('hashchange', navigate);

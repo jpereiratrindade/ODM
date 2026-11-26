@@ -10,6 +10,24 @@ from gui.preview import mesh_preview, raster_preview
 
 
 class PreviewTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('PIL'), 'Pillow not installed')
+    def test_photo_orientation_exif_and_original_preserved(self):
+        from PIL import Image
+        from gui.preview import photo_preview
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'photo.jpg'
+            exif = Image.Exif(); exif[274] = 6; exif[272] = 'Test camera\x00'
+            Image.new('RGB', (800, 400), 'green').save(path, exif=exif)
+            original = path.read_bytes()
+            result = photo_preview(path, True)
+            self.assertEqual((result['width'], result['height']), (400, 800))
+            self.assertEqual(result['metadata']['Câmera'], 'Test camera')
+            import io
+            with Image.open(io.BytesIO(base64.b64decode(result['image']))) as image:
+                self.assertLessEqual(max(image.size), 360)
+                self.assertLess(image.width, image.height)
+            self.assertEqual(path.read_bytes(), original)
+
     def test_obj_sample_is_bounded_and_preserves_input(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'model.obj'

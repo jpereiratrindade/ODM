@@ -13,6 +13,8 @@ import signal
 import subprocess
 import sys
 import threading
+import base64
+import importlib.util
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import urlsplit, parse_qs
@@ -26,6 +28,10 @@ OUTPUTS = ('odm_orthophoto/odm_orthophoto.tif', 'odm_dem/dsm.tif',
 ODM_IMAGE = 'docker.io/opendronemap/odm:latest'
 PRODUCTS = dict(zip(('ortho', 'dsm', 'dtm', 'cloud', 'model', 'report'), OUTPUTS))
 ANSI = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+PHOTO_TYPES = {'.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff', '.dng', '.nef', '.raw', '.bmp', '.jxl'}
+VIDEO_TYPES = {'.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+               '.m4v': 'video/mp4', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+               '.ts': 'video/mp2t', '.lrv': 'video/mp4', '.mts': 'video/mp2t'}
 
 
 def select_engine(requested, image):
@@ -76,6 +82,71 @@ class Workspace:
         self.selected_project = None
         self.preview_cache = {}
         self.preview_lock = threading.Lock()
+        self.media_cache = {}
+        self.media_lock = threading.Lock()
+
+    def media_path(self, project, name):
+        root = self.project_path(project)
+        images = (root / 'images').resolve()
+        if not isinstance(name, str) or Path(name).name != name or '\\' in name or name.startswith('.'):
+            raise ValueError('Nome de arquivo inválido.')
+        path = (images / name).resolve()
+        if (not images.is_relative_to(root) or path.parent != images or not path.is_file()
+                or path.suffix.lower() not in PHOTO_TYPES | VIDEO_TYPES.keys()):
+            raise ValueError('Mídia não disponível neste projeto.')
+        return path
+
+    def media_list(self, project):
+        root = self.project_path(project) / 'images'
+        result = []
+        for file in sorted(root.iterdir(), key=lambda p: p.name.casefold()):
+            try:
+                file = self.media_path(project, file.name)
+                stat = file.stat()
+                result.append({'name': file.name, 'kind': 'video' if file.suffix.lower() in VIDEO_TYPES else 'photo',
+                               'bytes': stat.st_size, 'format': file.suffix[1:].upper()})
+            except (ValueError, OSError):
+                continue
+        return result
+
+    def inspect_photo(self, project, name, thumbnail=False):
+        path = self.media_path(project, name)
+        if path.suffix.lower() not in PHOTO_TYPES:
+            raise ValueError('Selecione uma foto.')
+        stat = path.stat()
+        key = (str(path), stat.st_mtime_ns, stat.st_size, thumbnail)
+        with self.media_lock:
+            if key in self.media_cache:
+                return self.media_cache[key]
+            if importlib.util.find_spec('PIL'):
+                if __package__:
+                    from .preview import photo_preview
+                else:
+                    from preview import photo_preview
+                try:
+                    data = photo_preview(path, thumbnail)
+                except Exception as error:
+                    raise ValueError('Formato de foto não decodificado. O original continua disponível.') from error
+            elif self.engine == 'podman':
+                root = self.project_path(project)
+                if ':' in str(root):
+                    raise ValueError('Caminho não suportado pelo motor Podman.')
+                command = ['podman', 'run', '--rm', '--pull=never', '--network=none',
+                           '--security-opt', 'label=disable', '--userns=keep-id',
+                           '--user', f'{os.getuid()}:{os.getgid()}', '--volume', f'{root}:/project:ro',
+                           '--entrypoint', 'python3', '-i', self.image, '-',
+                           'thumbnail' if thumbnail else 'photo', '/project/images/' + name]
+                run = subprocess.run(command, input=Path(__file__).with_name('preview.py').read_text(),
+                                     text=True, capture_output=True, timeout=30)
+                if run.returncode:
+                    raise ValueError('Formato de foto não decodificado pelo motor. O original continua disponível.')
+                data = json.loads(run.stdout)
+            else:
+                raise ValueError('Prévia de fotos requer Pillow no servidor ou motor Podman.')
+            if len(self.media_cache) >= 48:
+                self.media_cache.pop(next(iter(self.media_cache)))
+            self.media_cache[key] = data
+            return data
 
     def output_path(self, project, product):
         root = self.project_path(project)
@@ -321,6 +392,52 @@ class Workspace:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def authenticated(self):
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get('Cookie', ''))
+        except CookieError:
+            return False
+        session = cookie.get('odm_session')
+        return (session.value if session else self.headers.get('X-ODM-Token')) == self.server.token
+
+    def stream_media(self, path, download=False):
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        requested = self.headers.get('Range')
+        if requested:
+            match = re.fullmatch(r'bytes=(\d*)-(\d*)', requested)
+            if match and (match[1] or match[2]) and size:
+                if match[1]:
+                    start = int(match[1]); end = min(int(match[2]), end) if match[2] else end
+                else:
+                    start = max(0, size - int(match[2]))
+            if not match or not (match[1] or match[2]) or start > end or start >= size or not size:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{size}')
+                self.send_header('Content-Length', '0'); self.end_headers(); return
+        self.send_response(206 if requested else 200)
+        self.send_header('Content-Type', VIDEO_TYPES.get(path.suffix.lower(), 'application/octet-stream'))
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Length', str(max(0, end - start + 1)))
+        if requested:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        if download:
+            from urllib.parse import quote
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''" + quote(path.name))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        try:
+            with path.open('rb') as file:
+                file.seek(start); remaining = end - start + 1
+                while remaining > 0:
+                    chunk = file.read(min(256 * 1024, remaining))
+                    if not chunk: break
+                    self.wfile.write(chunk); remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # Seeking/closing a browser video aborts the previous range request.
+
     def send(self, code, body, content_type='application/json; charset=utf-8'):
         if not isinstance(body, bytes):
             body = json.dumps(body, ensure_ascii=False).encode()
@@ -329,11 +446,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'")
         if self.path == '/api/projects' and code == 200:
             self.send_header('Set-Cookie', f'odm_session={self.server.token}; HttpOnly; SameSite=Strict; Path=/')
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def valid_host(self):
         return self.headers.get('Host') == self.server.authority
@@ -342,6 +462,19 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host():
             return self.send(403, {'error': 'Host inválido.'})
         try:
+            if urlsplit(self.path).path == '/api/media':
+                if not self.authenticated():
+                    return self.send(403, {'error': 'Sessão inválida.'})
+                query = parse_qs(urlsplit(self.path).query)
+                project, name = query.get('project', [''])[0], query.get('file', [''])[0]
+                mode = query.get('mode', ['original'])[0]
+                path = self.server.workspace.media_path(project, name)
+                if mode == 'thumb':
+                    data = self.server.workspace.inspect_photo(project, name, True)
+                    return self.send(200, base64.b64decode(data['image']), 'image/jpeg')
+                if mode not in ('original', 'download'):
+                    raise ValueError('Modo de mídia inválido.')
+                return self.stream_media(path, mode == 'download')
             if urlsplit(self.path).path == '/api/output':
                 cookie = SimpleCookie()
                 try:
@@ -376,13 +509,14 @@ class Handler(BaseHTTPRequestHandler):
                      '/style.css': ('style.css', 'text/css'),
                      '/app.js': ('app.js', 'text/javascript'),
                      '/viewer.js': ('viewer.js', 'text/javascript'),
+                     '/media.js': ('media.js', 'text/javascript'),
                      '/worker.js': ('worker.js', 'text/javascript'),
                      '/wasm/gsd.wasm': ('wasm/gsd.wasm', 'application/wasm')}
             if self.path not in files:
                 return self.send(404, {'error': 'Não encontrado.'})
             name, kind = files[self.path]
             self.send(200, (WEB / name).read_bytes(), kind)
-        except (ValueError, OSError) as error:
+        except (ValueError, OSError, subprocess.TimeoutExpired) as error:
             self.send(400, {'error': str(error)})
 
     def do_POST(self):
@@ -397,6 +531,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError('Pedido deve ser objeto JSON.')
             workspace = self.server.workspace
+            if self.path == '/api/media-list':
+                return self.send(200, {'files': workspace.media_list(data.get('project'))})
+            if self.path == '/api/photo':
+                return self.send(200, workspace.inspect_photo(data.get('project'), data.get('file')))
             if self.path == '/api/project':
                 with workspace.lock:
                     if workspace.state in ('running', 'stopping'):
