@@ -42,7 +42,7 @@ def extract(source, destination, options):
         raise ValueError('Extração requer uma pasta images/ nova e vazia.')
     capture = cv2.VideoCapture(str(source))
     rows, accepted, previous, last_time = [], [], None, None
-    report = {'source': Path(source).name, 'parameters': options, 'complete': False, 'frames': rows,
+    report = {'application': 'Paralaxe', 'source': Path(source).name, 'parameters': options, 'complete': False, 'frames': rows,
               'notice': 'Movimento em pixels não garante paralaxe. Quadros sem continuidade são preservados e sinalizados. Metadados GPS/SRT não são transferidos; mantenha os originais.'}
     (destination / 'extraction.json').write_text(json.dumps(report, indent=2))
     try:

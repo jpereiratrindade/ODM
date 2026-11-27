@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Experimental local ODM interface with optional authenticated LAN access."""
+"""Paralaxe: image preparation and photogrammetry with the OpenDroneMap engine."""
 import argparse
 import hmac
 from collections import deque
@@ -88,7 +88,7 @@ class Workspace:
         self.stage = None
         self.engine = engine
         self.image = image
-        self.container_name = 'odm-gui-' + secrets.token_hex(8)
+        self.container_name = 'paralaxe-' + secrets.token_hex(8)
         self.error = None
         self.selected_project = None
         self.preview_cache = {}
@@ -324,7 +324,7 @@ class Workspace:
             (target / 'images').mkdir()
             try:
                 if self.engine == 'podman':
-                    self.container_name = 'odm-gui-' + secrets.token_hex(8)
+                    self.container_name = 'paralaxe-' + secrets.token_hex(8)
                     command = ['podman', 'run', '--rm', '--pull=never', '--network=none',
                                '--name', self.container_name, '--userns=keep-id',
                                '--user', f'{os.getuid()}:{os.getgid()}', '--security-opt', 'label=disable',
@@ -671,7 +671,7 @@ class Workspace:
             if self.state in ('running', 'stopping'):
                 raise ValueError('Já existe execução ativa.')
             if self.external:
-                self.container_name = 'odm-gui-' + secrets.token_hex(8)
+                self.container_name = 'paralaxe-' + secrets.token_hex(8)
             command = self.prepare(data)
             import_manifest = self.project_path(data.get('project')) / 'browser-import.json'
             if import_manifest.is_file() and not json.loads(import_manifest.read_text()).get('complete'):
@@ -779,13 +779,13 @@ class Handler(BaseHTTPRequestHandler):
             scheme, encoded = header.split(' ', 1)
             decoded = base64.b64decode(encoded, validate=True).decode('utf-8')
             user, supplied = decoded.split(':', 1)
-            if scheme.lower() == 'basic' and hmac.compare_digest(user.encode(), b'odm') and hmac.compare_digest(supplied.encode(), password.encode()):
+            if scheme.lower() == 'basic' and any(hmac.compare_digest(user.encode(), expected) for expected in (b'paralaxe', b'odm')) and hmac.compare_digest(supplied.encode(), password.encode()):
                 return True
         except (ValueError, UnicodeError):
             pass
-        body = b'Acesso restrito. Informe o usuario odm e a senha configurada.'
+        body = b'Acesso restrito. Informe o usuario paralaxe e a senha configurada.'
         self.send_response(401)
-        self.send_header('WWW-Authenticate', 'Basic realm="ODM local", charset="UTF-8"')
+        self.send_header('WWW-Authenticate', 'Basic realm="Paralaxe", charset="UTF-8"')
         self.send_header('Content-Type', 'text/plain; charset=utf-8')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Length', str(len(body)))
@@ -923,6 +923,14 @@ class Handler(BaseHTTPRequestHandler):
                      '/sources.js': ('sources.js', 'text/javascript'),
                      '/local-browser.js': ('local-browser.js', 'text/javascript'),
                      '/local-worker.js': ('local-worker.js', 'text/javascript'),
+                     '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
+                     '/assets/paralaxe.svg': ('assets/paralaxe.svg', 'image/svg+xml'),
+                     '/assets/paralaxe-wordmark.svg': ('assets/paralaxe-wordmark.svg', 'image/svg+xml'),
+                     '/assets/favicon.svg': ('assets/favicon.svg', 'image/svg+xml'),
+                     '/assets/icons.svg': ('assets/icons.svg', 'image/svg+xml'),
+                     '/assets/icon-192.png': ('assets/icon-192.png', 'image/png'),
+                     '/assets/icon-512.png': ('assets/icon-512.png', 'image/png'),
+                     '/favicon.ico': ('assets/favicon.svg', 'image/svg+xml'),
                      '/vendor/opencv.js': ('vendor/opencv.js', 'text/javascript'),
                      '/vendor/fflate.js': ('vendor/fflate.js', 'text/javascript'),
                      '/cleanup.js': ('cleanup.js', 'text/javascript'),
@@ -1012,7 +1020,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def project_inventory(self):
         workspace = self.server.workspace
-        return {'projects': workspace.projects(), 'token': self.server.token,
+        return {'application': 'Paralaxe', 'projects': workspace.projects(), 'token': self.server.token,
                 'engine': workspace.engine,
                 'selected': workspace.selected_project,
                 'datasets': str(workspace.datasets) if workspace.datasets is not None else None}
@@ -1024,7 +1032,7 @@ def main():
     parser.add_argument('--port', type=int, default=8097)
     parser.add_argument('--host', choices=('127.0.0.1', '0.0.0.0'), default='127.0.0.1', help='0.0.0.0 habilita acesso IPv4 pela rede local.')
     parser.add_argument('--allowed-host', action='append', default=[], help='IP ou nome permitido na rede local, sem porta. Pode ser repetido.')
-    parser.add_argument('--lan-password-file', type=Path, help='Arquivo da senha de acesso para o usuário odm; obrigatório no modo de rede.')
+    parser.add_argument('--lan-password-file', type=Path, help='Arquivo da senha de acesso para o usuário paralaxe; obrigatório no modo de rede.')
     parser.add_argument('--engine', choices=('auto', 'native', 'podman'), default='auto',
                         help='Motor de processamento. Auto usa instalação nativa ou imagem Podman já instalada.')
     parser.add_argument('--image', default=ODM_IMAGE, help='Imagem ODM local para o motor Podman (sem download automático).')
@@ -1051,10 +1059,10 @@ def main():
         server.authority = f'127.0.0.1:{server.server_port}'
         server.allowed_authorities = {f'{host}:{server.server_port}' for host in ['127.0.0.1', 'localhost', *args.allowed_host]}
         server.lan_password = password
-        print(f'ODM experimental: http://{server.authority}', flush=True)
-        print(f'Motor de processamento: {server.workspace.engine}', flush=True)
+        print(f'Paralaxe: http://{server.authority}', flush=True)
+        print(f'Motor de reconstrução: OpenDroneMap ({server.workspace.engine})', flush=True)
         if args.host == '0.0.0.0':
-            print('Acesso de rede com usuário odm e senha do arquivo configurado.', flush=True)
+            print('Acesso de rede com usuário paralaxe e senha do arquivo configurado.', flush=True)
             for host in args.allowed_host:
                 print(f'Rede local: http://{host}:{server.server_port}', flush=True)
         try:

@@ -1,11 +1,31 @@
-> **Independent experimental fork:** maintained by José Pedro Trindade
-> ([jpereiratrindade](https://github.com/jpereiratrindade)), with AI-assisted
-> development. Modified on 2026-11-26 to add a local browser interface and
-> native/Podman processing integration. This fork is not an official OpenDroneMap
-> release and does not imply endorsement by its maintainers. Original code and
-> credits remain those of OpenDroneMap and its contributors. Distributed under
-> the [GNU AGPL v3](LICENSE), without warranty; see [GUI documentation](gui/README.md)
-> for scope, limitations, and validation.
+# Paralaxe
+
+![Paralaxe](gui/web/assets/paralaxe-wordmark.svg)
+
+**Preparação de imagens, análise de perspectivas e fotogrametria com OpenDroneMap.**
+
+Paralaxe é uma aplicação independente para analisar fotos e vídeos, selecionar
+quadros no navegador ou servidor, planejar levantamentos e acompanhar a geração
+de ortofotos e modelos. O motor de reconstrução é o **OpenDroneMap**.
+
+[Documentação do Paralaxe e instruções de execução](gui/README.md) ·
+[Histórico da aplicação](gui/CHANGELOG.md)
+
+```bash
+python3 gui/server.py
+# Ou, no ambiente Pixi:
+pixi run paralaxe
+```
+
+> **Independent application and experimental ODM fork:** maintained by José Pedro
+> Trindade ([jpereiratrindade](https://github.com/jpereiratrindade)), with AI-assisted
+> development. Application identity updated on 2026-11-27. This is not an official
+> OpenDroneMap release and does not imply endorsement by its maintainers.
+> Original engine code and credits remain those of OpenDroneMap and its
+> contributors. Distributed under the [GNU AGPL v3](LICENSE), without warranty;
+> see [application documentation](gui/README.md) for scope and validation.
+
+## OpenDroneMap engine — original documentation
 
 ![ODM Logo](https://github.com/OpenDroneMap/ODM/blob/master/odm.png?raw=true)
 

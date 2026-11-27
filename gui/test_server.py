@@ -338,8 +338,10 @@ class WorkspaceTests(unittest.TestCase):
         for path in ['/', '/api/projects', '/api/status?since=0', '/sources.js']:
             self.assertEqual(request('GET', path)[0], 401)
         self.assertEqual(request('GET', '/', {'Authorization': 'Basic invalid'})[0], 401)
-        auth = {'Authorization': 'Basic ' + base64.b64encode(b'odm:a-long-test-password').decode()}
+        auth = {'Authorization': 'Basic ' + base64.b64encode(b'paralaxe:a-long-test-password').decode()}
         self.assertEqual(request('GET', '/', auth)[0], 200)
+        legacy = {'Authorization': 'Basic ' + base64.b64encode(b'odm:a-long-test-password').decode()}
+        self.assertEqual(request('GET', '/', legacy)[0], 200)
         self.assertEqual(request('GET', '/api/projects', auth)[0], 200)
         self.assertEqual(request('GET', '/', dict(auth, Host='evil.example'))[0], 403)
         headers = dict(auth, Origin='http://' + lan, **{'X-ODM-Token': server.token})
@@ -367,6 +369,10 @@ class WorkspaceTests(unittest.TestCase):
 
         self.assertEqual(request('GET', '/')[0], 200)
         self.assertEqual(request('GET', '/sources.js')[0], 200)
+        self.assertIn(b'Paralaxe', request('GET', '/')[1])
+        self.assertIn(b'<svg', request('GET', '/assets/favicon.svg')[1])
+        self.assertIn(b'id="analysis"', request('GET', '/assets/icons.svg')[1])
+        self.assertEqual(json.loads(request('GET', '/manifest.webmanifest')[1])['short_name'], 'Paralaxe')
         self.assertIn(b'GNU AFFERO GENERAL PUBLIC LICENSE', request('GET', '/LICENSE')[1])
         self.assertEqual(request('GET', '/wasm/gsd.wasm')[1][:4], b'\0asm')
         self.assertEqual(request('GET', '/../run.py')[0], 404)

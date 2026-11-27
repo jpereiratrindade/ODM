@@ -44,7 +44,7 @@ function renderMedia() {
   mediaFiltered.slice(mediaPage*mediaPageSize,(mediaPage+1)*mediaPageSize).forEach((file,index) => {
     const button = document.createElement('button');button.type='button';button.className='media-card';button.setAttribute('aria-label',`Inspecionar ${file.name}`);
     const imageBox = document.createElement('div');imageBox.className='media-thumb';
-    const placeholder = document.createElement('span');placeholder.textContent=file.kind==='video'?'▷':'▧';placeholder.setAttribute('aria-hidden','true');imageBox.append(placeholder);
+    const placeholder = document.createElement('span');placeholder.append(uiIcon(file.kind==='video'?'video':'photo'));placeholder.setAttribute('aria-hidden','true');imageBox.append(placeholder);
     if (file.kind==='photo') {
       const image=document.createElement('img');image.alt='';image.loading='lazy';image.decoding='async';image.src=mediaUrl(file.name,'thumb');
       image.addEventListener('error',()=>{image.remove();placeholder.textContent='Prévia indisponível';placeholder.className='media-no-preview';});imageBox.append(image);

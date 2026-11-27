@@ -2,31 +2,33 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ODM · Laboratório de fotogrametria</title>
+  <title>Paralaxe · Imagens e fotogrametria</title>
+  <meta name="application-name" content="Paralaxe"><meta name="theme-color" content="#0a263d"><meta name="description" content="Paralaxe: preparação de imagens, análise de perspectivas e fotogrametria com o motor OpenDroneMap.">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="icon" href="/assets/icon-192.png" type="image/png" sizes="192x192"><link rel="apple-touch-icon" href="/assets/icon-192.png"><link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/style.css"><script src="/cleanup.js" defer></script><script src="/planning.js" defer></script><script src="/media.js" defer></script><script src="/viewer.js" defer></script><script src="/vendor/fflate.js" defer></script><script src="/local-browser.js" defer></script><script src="/sources.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Ir para conteúdo</a>
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="#projeto"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="m24 5 19 10v18L24 43 5 33V15Z M5 15l19 11 19-11M24 26v17"/></svg><span><small>LABORATÓRIO LOCAL</small><strong>ODM</strong></span></a>
-    <p class="subtitle">Fotogrametria e território</p>
+    <a class="brand" href="#projeto" aria-label="Paralaxe — início"><img src="/assets/paralaxe.svg" alt="" width="42" height="48"><span><small>IMAGENS E FOTOGRAMETRIA</small><strong>Paralaxe</strong></span></a>
+    <p class="subtitle">Perspectivas em profundidade.</p>
     <small class="navlabel">ESPAÇO DE TRABALHO</small>
     <nav aria-label="Seções">
-      <a href="#projeto" aria-current="page">01 <span>Meu levantamento</span></a>
-      <a href="#analise">02 <span>Analisar imagens</span></a>
-      <a href="#planejamento">03 <span>Planejar um voo</span></a>
-      <a href="#resultados">04 <span>Meus produtos</span></a>
-      <a href="#visualizar">05 <span>Visualizar resultados</span></a>
-      <a href="#midias">06 <span>Fotos e vídeos</span></a>
+      <a href="#projeto" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#project"/></svg><span>Meu levantamento</span></a>
+      <a href="#analise"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#analysis"/></svg><span>Analisar imagens</span></a>
+      <a href="#planejamento"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#flight"/></svg><span>Planejar um voo</span></a>
+      <a href="#resultados"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#products"/></svg><span>Meus produtos</span></a>
+      <a href="#visualizar"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#view"/></svg><span>Visualizar resultados</span></a>
+      <a href="#midias"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#photo"/></svg><span>Fotos e vídeos</span></a>
     </nav>
-    <div class="side-bottom"><small>SEU TERRITÓRIO, SEUS DADOS</small><p>Do voo ao território.<br>Processamento na sua máquina.</p><span>Fotos e processamento locais.<br>Sem enviar arquivos para nuvem.</span></div>
-    <p class="local">● &nbsp; Ambiente local <span>v0.1</span></p>
+    <div class="side-bottom"><small>DA IMAGEM AO TERRITÓRIO</small><p>Prepare. Analise.<br>Reconstrua.</p><span>Imagens no navegador ou servidor.<br>Reconstrução com OpenDroneMap.</span></div>
+    <p class="local">● &nbsp; Paralaxe <span>Experimental</span></p>
   </aside>
   <div class="workspace">
-    <header><span>ODM &nbsp; / &nbsp; <strong id="view-title">Meu levantamento</strong></span><div class="badges"><span class="badge">● Tudo neste computador</span></div></header>
+    <header><span>Paralaxe &nbsp; / &nbsp; <strong id="view-title">Meu levantamento</strong></span><div class="badges"><span class="badge">● Navegador + servidor</span></div></header>
     <main id="main">
-      <section class="hero"><div><small>SEU ESPAÇO DE FOTOGRAMETRIA</small><h1>Transforme fotos<br><em>em território.</em></h1><p>Escolha o levantamento, analise suas imagens e processe com os cuidados adequados.</p></div><svg viewBox="0 0 180 150" aria-hidden="true"><path d="m12 100 68-38 88 35-67 41Z"/><path d="m12 77 68-38 88 35-67 41Z"/><path d="m12 54 68-38 88 35-67 41Z"/></svg></section>
+      <section class="hero"><div><small>PARALAXE · PERSPECTIVAS QUE REVELAM PROFUNDIDADE</small><h1>Transforme fotos<br><em>em território.</em></h1><p>Escolha o levantamento, analise suas imagens e processe com os cuidados adequados.</p></div><svg class="parallax-illustration" viewBox="0 0 180 150" aria-hidden="true"><g class="view-a"><path d="m18 32 70-15 4 59-70 15Z"/><circle cx="44" cy="45" r="4"/></g><g class="view-b"><path d="m75 42 70-15 4 59-70 15Z"/><circle cx="119" cy="56" r="4"/></g><path class="sight-line" d="m44 45 47 78m28-67-28 67"/><path class="ground-plane" d="m45 123 46-19 49 20-47 20Z"/><circle class="scene-point" cx="91" cy="123" r="5"/></svg></section>
       <div class="stats"><article><span>LEVANTAMENTO DO PROCESSAMENTO</span><strong id="project-name">—</strong><small>Seu espaço de trabalho</small></article><article><span>FOTOS DO PROCESSAMENTO</span><strong id="image-count">—</strong><small>JPEG, TIFF, DNG e PNG</small></article><article><span>ACOMPANHAMENTO</span><strong id="state">Aguardando</strong><small id="state-note">Pronto para configurar</small></article></div>
       <section class="panel" id="projeto">
         <div class="heading"><div><small class="eyebrow">01 · ESCOLHA SEU LEVANTAMENTO</small><h2>Vamos começar pelas fotos</h2></div></div>
@@ -40,15 +42,15 @@
           <div class="step-heading"><small class="eyebrow">02 · ESCOLHA COMO PROCESSAR</small><h2>Qual é seu objetivo?</h2></div>
           <input id="quality" type="hidden" value="medium">
           <div class="profile-grid" role="group" aria-label="Perfil de processamento">
-            <button type="button" class="profile" data-quality="low" aria-pressed="false"><span class="card-icon">↗</span><strong>Explorar rápido</strong><span>Uma primeira visão do levantamento, com menos detalhes.</span><small>Menor esforço de processamento</small></button>
-            <button type="button" class="profile selected" data-quality="medium" aria-pressed="true"><span class="card-icon">◎</span><strong>Equilíbrio</strong><span>Boa definição para analisar e mapear seu território.</span><small>Recomendado para começar</small></button>
-            <button type="button" class="profile" data-quality="high" aria-pressed="false"><span class="card-icon">◇</span><strong>Mais detalhes</strong><span>Priorize definição para examinar pequenas estruturas.</span><small>Exige mais tempo e memória</small></button>
+            <button type="button" class="profile" data-quality="low" aria-pressed="false"><span class="card-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#fast"/></svg></span><strong>Explorar rápido</strong><span>Uma primeira visão do levantamento, com menos detalhes.</span><small>Menor esforço de processamento</small></button>
+            <button type="button" class="profile selected" data-quality="medium" aria-pressed="true"><span class="card-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#balanced"/></svg></span><strong>Equilíbrio</strong><span>Boa definição para analisar e mapear seu território.</span><small>Recomendado para começar</small></button>
+            <button type="button" class="profile" data-quality="high" aria-pressed="false"><span class="card-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#detail"/></svg></span><strong>Mais detalhes</strong><span>Priorize definição para examinar pequenas estruturas.</span><small>Exige mais tempo e memória</small></button>
           </div>
           <p class="profile-help">Perfil rápido usa menos detalhes na reconstrução. Se não formar uma nuvem de pontos, tente Equilíbrio.</p>
           <div class="step-heading"><small class="eyebrow">03 · DEFINA OS PRODUTOS</small><h2>O que você quer criar?</h2><p class="muted">Sua ortofoto e nuvem de pontos estão incluídas. Se desejar, acrescente modelos de superfície, terreno e 3D.</p></div>
           <div class="included-products" aria-label="Produtos sempre incluídos">
-            <article class="included-product"><span class="included-icon" aria-hidden="true">▧</span><div><strong>Ortofoto</strong><p>Mapa aéreo corrigido e georreferenciado, em GeoTIFF.</p><span class="badge">✓ Sempre incluída</span></div></article>
-            <article class="included-product"><span class="included-icon" aria-hidden="true">⠿</span><div><strong>Nuvem de pontos</strong><p>Reconstrução espacial do levantamento, em LAZ.</p><span class="badge">✓ Sempre incluída</span></div></article>
+            <article class="included-product"><span class="included-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="/assets/icons.svg#orthophoto"/></svg></span><div><strong>Ortofoto</strong><p>Mapa aéreo corrigido e georreferenciado, em GeoTIFF.</p><span class="badge">✓ Sempre incluída</span></div></article>
+            <article class="included-product"><span class="included-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="/assets/icons.svg#cloud"/></svg></span><div><strong>Nuvem de pontos</strong><p>Reconstrução espacial do levantamento, em LAZ.</p><span class="badge">✓ Sempre incluída</span></div></article>
           </div>
           <p class="additional-label">Produtos adicionais</p>
           <div class="product-grid">
@@ -92,7 +94,7 @@
         <div class="viewer-selectors"><label>Levantamento<select id="viewer-project"></select></label><label>Produto<select id="viewer-product"></select></label><button id="viewer-load" type="button">Visualizar</button></div>
         <p id="viewer-status" role="status" aria-live="polite">Escolha um levantamento com produtos gerados.</p>
         <div class="viewer-toolbar"><div><button id="viewer-in" class="outline" type="button" aria-label="Ampliar visualização">+</button><button id="viewer-out" class="outline" type="button" aria-label="Reduzir visualização">−</button><button id="viewer-fit" class="outline" type="button">Ajustar à tela</button></div><a id="viewer-download" class="download-link" hidden>Baixar arquivo original ↓</a></div>
-        <div id="viewer-stage" class="viewer-stage"><canvas id="result-canvas" tabindex="0" aria-label="Prévia do produto. Use botões para ampliar e ajustar; arraste para mover mapa ou girar pontos."></canvas><iframe id="result-pdf" title="Relatório de qualidade do levantamento" hidden></iframe><div id="viewer-empty"><span aria-hidden="true">▧</span><strong>Uma nova perspectiva do seu território</strong><p>Selecione um produto acima para abrir sua prévia.</p></div></div>
+        <div id="viewer-stage" class="viewer-stage"><canvas id="result-canvas" tabindex="0" aria-label="Prévia do produto. Use botões para ampliar e ajustar; arraste para mover mapa ou girar pontos."></canvas><iframe id="result-pdf" title="Relatório de qualidade do levantamento" hidden></iframe><div id="viewer-empty"><span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="/assets/icons.svg#view"/></svg></span><strong>Uma nova perspectiva do seu território</strong><p>Selecione um produto acima para abrir sua prévia.</p></div></div>
         <p id="viewer-help" class="muted">Ortofotos e elevações: arraste para mover. Nuvens e modelos: arraste para girar. Use a roda do mouse ou os botões para ampliar.</p>
         <dl id="viewer-info" class="viewer-info"></dl>
       </section>
@@ -103,7 +105,7 @@
         <p id="media-status" role="status" aria-live="polite">Escolha um levantamento.</p>
         <div id="media-grid" class="media-grid"></div><div class="media-pagination"><button id="media-previous-page" type="button" class="outline">← Anterior</button><span id="media-page"></span><button id="media-next-page" type="button" class="outline">Próxima →</button></div>
       </section>
-      <footer class="legal-footer"><div><strong>Baseado em OpenDroneMap e seus contribuidores.</strong><span>Fork independente de José Pedro Trindade · Modificado em 26/11/2026 com assistência de IA · Sem garantia.</span></div><nav aria-label="Licença e código-fonte"><a href="/LICENSE">Licença AGPL v3</a><a href="https://github.com/jpereiratrindade/ODM/tree/feat/local-gui">Código-fonte desta versão</a><a href="https://github.com/OpenDroneMap/ODM">Projeto original</a></nav></footer>
+      <footer class="legal-footer"><div><strong>Paralaxe · Motor de reconstrução: OpenDroneMap.</strong><span>Aplicação independente de José Pedro Trindade · OpenDroneMap e seus contribuidores mantêm os créditos do motor · Modificado em 27/11/2026 com assistência de IA · Sem garantia.</span></div><nav aria-label="Licença e código-fonte"><a href="/LICENSE">Licença AGPL v3</a><a href="https://github.com/jpereiratrindade/ODM/tree/feat/local-gui">Código-fonte desta versão</a><a href="https://github.com/OpenDroneMap/ODM">Projeto original</a></nav></footer>
     </main>
   </div>
 </div>

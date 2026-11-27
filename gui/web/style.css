@@ -108,3 +108,29 @@ nav { gap:6px; }
 @media(max-width:760px) { .local-browser { margin:14px; padding:16px; }.analysis-location { padding:16px 14px 0; }.local-actions button { width:100%; } }
 
 .local-file-button:has(input:disabled) { background:#e2e8ed; color:#576c7b; cursor:not-allowed; }.local-browser .form-grid label { max-width:none; }
+
+/* Paralaxe identity: paired perspectives, a shared point and warm optical accent. */
+:root { --paralaxe-cyan:#70d8dc; --paralaxe-amber:#f0c478; }
+.brand { gap:10px; }
+.brand img { width:42px; height:48px; flex-shrink:0; }
+.brand strong { font-size:25px; letter-spacing:-.04em; font-weight:650; line-height:1.3; }
+.brand small { font-size:7px; letter-spacing:.095em; white-space:nowrap; color:#b5d9e5; }
+.subtitle { margin-left:52px; font-size:10px; margin-top:5px; }
+.ui-icon,.nav-icon { fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.nav-icon { width:21px; height:21px; flex-shrink:0; color:#85cbd4; }
+.sidebar nav a { gap:12px; }
+.sidebar nav a[aria-current] { box-shadow:inset 3px 0 var(--paralaxe-amber); }
+.sidebar nav a[aria-current] .nav-icon { color:var(--paralaxe-amber); }
+.card-icon .ui-icon { width:29px; height:29px; display:block; }
+.included-icon .ui-icon { width:37px; height:37px; display:block; }
+.result-visual .ui-icon { width:62px; height:62px; stroke-width:1.2; }
+.media-thumb .ui-icon { width:50px; height:50px; stroke-width:1.4; }
+#viewer-empty>span .ui-icon { width:64px; height:64px; }
+.hero .parallax-illustration { width:220px; transform:none; }
+.parallax-illustration .view-a { stroke:#70d8dc; fill:#70d8dc09; }
+.parallax-illustration .view-b { stroke:#f0c478; fill:#f0c4780c; }
+.parallax-illustration .sight-line { stroke:#d1ede7; stroke-dasharray:4 4; }
+.parallax-illustration .ground-plane { stroke:#82b8b6; fill:#b5e8e008; }
+.parallax-illustration .scene-point { fill:#fff; stroke:#fff; }
+@media(max-width:760px) { .brand strong { font-size:25px; }.brand img { width:35px; height:40px; }.brand small { font-size:7px; }.nav-icon { width:18px; height:18px; }.hero .parallax-illustration { width:105px; } }
+@media(max-width:420px) { .hero .parallax-illustration { display:none; } }

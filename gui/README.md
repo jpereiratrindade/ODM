@@ -1,19 +1,28 @@
-# Interface experimental ODM
+# Paralaxe
 
-Interface local em português, inspirada na estrutura e nas cores do
-[SITUS](https://github.com/jpereiratrindade/SITUS/tree/main/web): menu lateral,
-painéis claros, azul e teal, SVG local e ausência de CDN ou telemetria.
-Protótipo independente da CLI existente, sem dependências Python adicionais.
+![Paralaxe — imagens e fotogrametria](web/assets/paralaxe-wordmark.svg)
+
+Aplicação independente para preparar imagens, analisar perspectivas e produzir
+levantamentos com o motor **OpenDroneMap**. Reúne análise de fotos e vídeos,
+extração de quadros, planejamento, reconstrução e exploração de resultados.
+A interface em português funciona no computador do servidor e pela rede local;
+análise e extração também podem executar no navegador de quem acessa a página.
+
+**Produto:** Paralaxe. **Motor de reconstrução:** OpenDroneMap.
+O repositório permanece como fork de ODM para preservar compatibilidade e histórico.
+A marca é própria: duas perspectivas sobrepostas convergem para um ponto comum.
+Símbolo, favicon, ícones e manifesto estão em `gui/web/assets` e `gui/web/manifest.webmanifest`.
+Os ícones são SVGs locais; não há fontes de ícones, CDN ou telemetria em tempo de execução.
 
 ## Origem, licença e transparência
 
 Esta interface é uma modificação independente do
 [OpenDroneMap/ODM](https://github.com/OpenDroneMap/ODM), mantida por José Pedro
 Trindade ([jpereiratrindade](https://github.com/jpereiratrindade)). Modificações
-realizadas em **26/11/2026**, com desenvolvimento assistido por IA (Codex).
+realizadas em **26–27/11/2026**, com desenvolvimento assistido por IA (Codex).
 Não é um lançamento oficial do OpenDroneMap e não implica aprovação dos autores.
 O código original e seus créditos permanecem atribuídos ao OpenDroneMap e seus
-contribuidores. A referência visual é o projeto SITUS, indicado acima.
+contribuidores. A identidade visual da aplicação é Paralaxe.
 
 O fork e as adições da interface são disponibilizados sob a
 [GNU Affero General Public License v3](../LICENSE), sem garantia, conforme a
@@ -31,16 +40,19 @@ admissível.
 
 ### Validação desta versão
 
-- Vinte e cinco testes: quatorze de contrato do servidor, incluindo rotas, validação de entrada,
-  restrição de origem, montagem Podman, interrupção, diagnóstico persistido,
-  cache de prévias, inventário de mídia, requisições parciais de vídeo e proteção
-  dos arquivos para download; cinco de prévias/metadados, verificando limites
-  de resolução, nodata, amostragem, orientação EXIF, estimativa de sensor,
-  parâmetros ausentes e preservação dos originais; seis de limpeza reversível,
-  cobrindo confirmação, mudanças desde a prévia, bloqueio durante execução,
-  restauração sem sobrescrita, links simbólicos e rollback de falha de movimentação.
+- Suíte Python com 40 testes de servidor, prévias, limpeza reversível e análise de imagens.
+  No ambiente local, quatro verificações que requerem OpenCV são ignoradas;
+  os demais testes passaram. A suíte cobre autenticação, pastas independentes,
+  importação explícita de fotos, proteção dos originais e identidade da aplicação.
+- Teste do Worker com o OpenCV.js/WebAssembly real: qualidade, movimento,
+  ambiguidade de homografia, reset/commit e exportação ZIP.
+- Integração real em Firefox com dados sintéticos: extração no navegador,
+  ausência de envio automático, envio explícito de JPEGs e cancelamento,
+  preservando um processamento ativo independente.
 - Interface verificada em navegador Chromium em larguras de 390, 768 e 1440 px;
   cálculo WASM e apresentação de erros de ambiente também verificados.
+- Identidade Paralaxe conferida em Firefox nas larguras de 500 e 1440 px,
+  com marca, ícones e navegação responsiva.
 - Processamento real com ODM 3.6.2 na imagem local Podman, sobre cópia separada
   de 23 JPG: ortofoto GeoTIFF, nuvem LAZ e relatório PDF gerados com sucesso.
   A ortofoto foi aberta com GDAL: 8815 × 10188 pixels, EPSG:32722 e resolução
@@ -58,13 +70,14 @@ Suba primeiro o servidor, sem indicar dataset:
 ```bash
 python3 gui/server.py
 # Ou, no ambiente Pixi:
-pixi run gui
+pixi run paralaxe
 ```
 
 Abra **http://127.0.0.1:8097**. Em **Meu levantamento**, clique em **Escolher pasta…**,
 navegue até o projeto e clique em **Usar esta pasta**. Também pode informar
 um caminho em **Informar localização manualmente**. Pode indicar o projeto contendo `images/` ou a pasta que
-contém vários projetos. Nenhum arquivo é copiado ou enviado pelo navegador.
+contém vários projetos. Escolher uma pasta do servidor não copia nem envia arquivos pelo navegador.
+O envio de fotos locais é uma operação separada e explícita em **Analisar imagens**.
 A pasta pode ser trocada pela interface quando não houver execução ativa.
 
 Organize os levantamentos assim:
@@ -81,7 +94,7 @@ Opcionalmente, indique uma pasta inicial ao subir o servidor, usando o mesmo
 ambiente Python configurado para ODM:
 
 ```bash
-pixi run gui --datasets /caminho/datasets
+pixi run paralaxe --datasets /caminho/datasets
 # Ou, com ambiente ODM já ativado:
 python gui/server.py --datasets /caminho/datasets
 ```
@@ -111,7 +124,7 @@ A opção Interromper para o container; não deixa o processamento destacado.
 O seletor também aceita um caminho terminado em `images/`, usando seu projeto pai.
 Erros de ambiente e de acesso aparecem em uma mensagem visível, além dos logs.
 
-As cinco seções têm telas próprias: **Meu levantamento**, **Planejar um voo**,
+As seis seções têm telas próprias: **Meu levantamento**, **Analisar imagens**, **Planejar um voo**,
 **Meus produtos**, **Visualizar resultados** e **Fotos e vídeos**. Escolha um perfil visual (rápido, equilibrado ou detalhado),
 marque os produtos desejados e clique **Criar ortofoto e produtos**. A ortofoto e
 a nuvem de pontos estão incluídas; os demais cartões adicionam produtos. O acompanhamento
@@ -130,7 +143,8 @@ atinge o processo Python principal; processos nativos filhos podem continuar.
 
 O ODM grava resultados no projeto e pode retomar etapas existentes segundo suas
 regras habituais. O inventário mostra produtos conhecidos e abre o visualizador.
-Não há upload, mapa-base externo ou gerenciador persistente de filas.
+Há importação explícita de fotos selecionadas no navegador para um projeto novo;
+não há envio automático de vídeos, mapa-base externo ou gerenciador persistente de filas.
 Logs da sessão ficam em memória, com limite de 2.000 linhas. O resumo do último
 processamento é recuperado do `log.json` do projeto após reiniciar o servidor. Fechar
 a aba não interrompe a execução; encerrar o servidor com Ctrl+C solicita parada.
@@ -207,8 +221,9 @@ Em **Meu levantamento → Limpar processamento → Revisar limpeza e backups**,
 confira a lista de gerados e dos itens que permanecerão no lugar. Para executar,
 digite exatamente o nome do levantamento e confirme **Limpar processamento com
 backup**. Limpeza e restauração são bloqueadas durante qualquer processamento
-ativo gerenciado pelo servidor. O bloqueio não coordena execuções externas da CLI;
-não execute outro ODM sobre a mesma pasta durante a operação.
+ativo gerenciado ou detectado pelo servidor. Containers Podman externos reconhecidos
+também bloqueiam essas operações; processos nativos externos não são detectados.
+Não execute outro ODM sobre a mesma pasta durante a operação.
 
 A operação é **reversível**: move somente uma lista explícita de pastas e arquivos
 gerados pelo ODM, incluindo intermediários OpenSfM, malhas, texturas, nuvem,
@@ -281,7 +296,7 @@ e serializa apenas as instruções aritméticas necessárias:
 
 ```bash
 python gui/build_wasm.py
-python -m unittest gui.test_server gui.test_preview gui.test_cleanup -v
+python -m unittest gui.test_server gui.test_preview gui.test_cleanup gui.test_preflight -v
 node --check gui/web/app.js
 node --check gui/web/viewer.js
 node --check gui/web/media.js
@@ -298,7 +313,8 @@ origem local e token por sessão. A navegação de pastas também exige o token;
 permite explorar diretórios acessíveis ao usuário do servidor, sem listar arquivos.
 Projetos ficam limitados aos filhos diretos
 da pasta de datasets escolhida explicitamente na interface ou na inicialização.
-Este servidor experimental destina-se a uma máquina local e um usuário.
+Este servidor experimental usa uma sessão de trabalho compartilhada; não oferece
+contas individuais, isolamento entre usuários ou filas para equipes.
 
 ### Execuções iniciadas fora da interface
 
@@ -341,10 +357,10 @@ O padrão continua sendo `127.0.0.1`. Para escutar em IPv4 na rede local, use `-
 ```bash
 python3 gui/server.py --datasets ~/odm --host 0.0.0.0 \
   --allowed-host 10.163.80.176 --allowed-host 10.163.4.160 \
-  --lan-password-file ~/.config/odm/lan-password
+  --lan-password-file ~/.config/paralaxe/lan-password
 ```
 
-O navegador solicita usuário **odm** e a senha do arquivo, inclusive no acesso por localhost quando este modo está ativo. Todas as páginas, arquivos e APIs exigem essa autenticação. Os controles de sessão e origem continuam ativos; o Host deve estar na lista configurada e a origem das requisições deve corresponder ao endereço utilizado. Se o DHCP mudar o IP, atualize `--allowed-host` ao reiniciar. A autenticação Basic utiliza HTTP sem TLS: este modo se destina a redes confiáveis, sem encaminhamento público de porta. A porta precisa ser permitida pelo firewall da máquina e pelas regras da rede.
+O navegador solicita usuário **paralaxe** e a senha do arquivo, inclusive no acesso por localhost quando este modo está ativo. Todas as páginas, arquivos e APIs exigem essa autenticação. Os controles de sessão e origem continuam ativos; o Host deve estar na lista configurada e a origem das requisições deve corresponder ao endereço utilizado. Se o DHCP mudar o IP, atualize `--allowed-host` ao reiniciar. A autenticação Basic utiliza HTTP sem TLS: este modo se destina a redes confiáveis, sem encaminhamento público de porta. A porta precisa ser permitida pelo firewall da máquina e pelas regras da rede.
 
 ### Fotos e vídeos no computador de quem acessa a página
 
@@ -366,3 +382,42 @@ python -m gui.test_local_browser  # requer Firefox e ffmpeg
 ```
 
 O teste real de navegador usa somente dados sintéticos e uma pasta temporária: verifica extração local, ausência de envio automático, envio explícito de JPEGs sem o vídeo, preservação de um processamento ativo e cancelamento.
+
+### Identidade e compatibilidade
+
+Paralaxe é a identidade da aplicação, do manifesto do navegador, dos ícones e das exportações locais (`paralaxe-fotos.zip`, `paralaxe-diagnostico.json`). O motor conserva seu nome OpenDroneMap, suas licenças, comandos, formatos e diretórios de saída. As credenciais novas usam o usuário `paralaxe`; `odm` continua aceito como alias para sessões existentes, com a mesma senha. O arquivo de senha é indicado explicitamente na inicialização; arquivos antigos continuam válidos. O comando `pixi run gui` permanece como alias de `pixi run paralaxe`. Os nomes técnicos `X-ODM-Token`, `odm_session`, opções da CLI e referências à imagem ODM permanecem compatíveis.
+
+
+## Limites do diagnóstico e recuperação de falhas
+
+Uma tentativa de alocação desproporcional no OpenMVS (por exemplo, centenas de
+terabytes) pode acompanhar valores geométricos inválidos ou um defeito do motor.
+O log isolado não identifica a causa e não prova falta de RAM física, corrupção
+das fotos ou erro de extração. A triagem procura indícios antes da execução;
+não calcula uma probabilidade de falha nem garante sucesso.
+
+Antes de repetir uma reconstrução que falhou:
+
+1. Preserve vídeo, fotos, metadados e logs. Confirme a existência de uma cópia
+   antes de limpar intermediários ou refazer a extração.
+2. Analise o trecho de vídeo ou a sequência de fotos na ferramenta independente.
+   Revise pouca mudança, desfoque, saltos e ambiguidade geométrica. Uma homografia
+   consistente pode ocorrer com giro da câmera, cena plana ou pouca paralaxe;
+   não distingue essas causas sozinha.
+3. Para vídeo, escolha um trecho útil e ajuste intervalo, limite de candidatos,
+   nitidez e movimento. Extraia para outro projeto e revise a seleção obtida.
+   Aumentar a quantidade de quadros semelhantes não garante melhor reconstrução.
+4. Confira o diagnóstico do novo projeto antes de processar. Para retomar um
+   projeto antigo, revise os backups e a limpeza reversível dos intermediários.
+   Produtos finais e qualidade de reconstrução são escolhas separadas: pedir
+   apenas ortofoto ainda exige reconstrução geométrica no motor.
+
+## Histórico e manutenção
+
+O [histórico da aplicação](CHANGELOG.md) resume as funcionalidades e a mudança de
+identidade. A [documentação dos recursos visuais](web/assets/README.md) identifica
+os arquivos editáveis. Para verificar uma instalação, execute a suíte Python,
+o teste de Worker e a integração de navegador descritos acima. A integração usa
+Firefox e ffmpeg e trabalha em pastas temporárias, sem depender de fotos privadas.
+O manifesto fornece nome e ícones para o navegador; não há service worker nem
+promessa de funcionamento completo offline.

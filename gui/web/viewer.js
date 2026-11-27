@@ -22,7 +22,7 @@ async function loadHistory() {
     const profile = {low:'Explorar rápido',medium:'Equilíbrio',high:'Mais detalhes'}[history.quality] || history.quality;
     const box = v('result-history'); box.replaceChildren(); box.hidden = false;
     const heading = document.createElement('strong'); heading.textContent = history.success ? 'Último processamento concluído' : history.finished ? 'Último processamento não concluiu' : 'Processamento sem encerramento registrado';
-    const note = document.createElement('p'); note.textContent = `Perfil: ${profile || 'não informado'} · ODM ${history.version || '—'}${history.seconds ? ' · ' + history.seconds.toLocaleString('pt-BR') + ' segundos' : ''}`;
+    const note = document.createElement('p'); note.textContent = `Perfil: ${profile || 'não informado'} · Motor OpenDroneMap ${history.version || '—'}${history.seconds ? ' · ' + history.seconds.toLocaleString('pt-BR') + ' segundos' : ''}`;
     box.append(heading, note);
     if (history.error) { const error = document.createElement('p'); error.textContent = history.error; box.append(error); }
     box.classList.toggle('failed', history.success === false);

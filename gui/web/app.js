@@ -5,15 +5,21 @@ let projects = [];
 let cursor = 0;
 let lastState;
 const productInfo = [
-  ['Ortofoto', 'Mapa aéreo georreferenciado', 'odm_orthophoto/odm_orthophoto.tif', '▧'],
-  ['Nuvem de pontos', 'Estrutura espacial do levantamento', 'odm_georeferencing/odm_georeferenced_model.laz', '⠿'],
-  ['Superfície', 'Relevo, vegetação e construções', 'odm_dem/dsm.tif', '≋'],
-  ['Terreno', 'Estimativa da superfície do solo', 'odm_dem/dtm.tif', '⌁'],
-  ['Modelo 3D', 'Reconstrução com textura', 'odm_texturing/odm_textured_model.obj', '◇'],
-  ['Relatório', 'Qualidade e resumo do processamento', 'odm_report/report.pdf', '▤']
+  ['Ortofoto', 'Mapa aéreo georreferenciado', 'odm_orthophoto/odm_orthophoto.tif', 'orthophoto'],
+  ['Nuvem de pontos', 'Estrutura espacial do levantamento', 'odm_georeferencing/odm_georeferenced_model.laz', 'cloud'],
+  ['Superfície', 'Relevo, vegetação e construções', 'odm_dem/dsm.tif', 'surface'],
+  ['Terreno', 'Estimativa da superfície do solo', 'odm_dem/dtm.tif', 'terrain'],
+  ['Modelo 3D', 'Reconstrução com textura', 'odm_texturing/odm_textured_model.obj', 'model'],
+  ['Relatório', 'Qualidade e resumo do processamento', 'odm_report/report.pdf', 'report']
 ];
 const productIds = ['ortho','cloud','dsm','dtm','model','report'];
 const states = {idle:'Aguardando', running:'Processando', stopping:'Interrompendo', completed:'Concluído', failed:'Falhou', cancelled:'Interrompido'};
+function uiIcon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('class', 'ui-icon'); svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '/assets/icons.svg#' + name); svg.append(use); return svg;
+}
 function notice(message, error = false) {
   $('notice').textContent = message;
   $('notice').classList.toggle('error', error);
@@ -22,7 +28,7 @@ async function api(path, data) {
   const response = await fetch('/api/' + path, data === undefined ? {} : {
     method:'POST', headers:{'Content-Type':'application/json', 'X-ODM-Token': token}, body:JSON.stringify(data)
   });
-  if (response.status === 401) throw new Error('Autenticação necessária. Entre com o usuário odm e a senha configurada; depois atualize a página.');
+  if (response.status === 401) throw new Error('Autenticação necessária. Entre com o usuário paralaxe e a senha configurada; depois atualize a página.');
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) throw new Error('O servidor retornou uma resposta inesperada. Atualize a página para reconectar.');
   const result = await response.json();
@@ -67,7 +73,7 @@ function updateResultProjects() {
     const available = project?.outputs.includes(path);
     const li = document.createElement('li');
     li.className = 'result-card' + (available ? ' available' : '');
-    const visual = document.createElement('div'); visual.className = 'result-visual'; visual.textContent = icon;
+    const visual = document.createElement('div'); visual.className = 'result-visual'; visual.append(uiIcon(icon));
     const heading = document.createElement('strong'); heading.textContent = title;
     const note = document.createElement('p'); note.textContent = description;
     const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = available ? '✓ Arquivo disponível' : 'Ainda não gerado';
@@ -86,7 +92,7 @@ function populateProjects(result) {
   const selected = result.selected || $('project').value;
   projects = result.projects;
   token = result.token;
-  $('processing-engine').textContent = result.engine === 'podman' ? 'Fotogrametria · ODM em Podman' : 'Fotogrametria · ambiente nativo';
+  $('processing-engine').textContent = result.engine === 'podman' ? 'Motor: OpenDroneMap · Podman' : 'Motor: OpenDroneMap · nativo';
   $('dataset-path').value = result.datasets || '';
   $('dataset-note').textContent = result.datasets ? 'Pasta de projetos: ' + result.datasets : 'Escolha a pasta do projeto. Seus arquivos ficam neste computador.';
   $('project').replaceChildren();

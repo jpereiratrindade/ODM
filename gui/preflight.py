@@ -240,7 +240,7 @@ def analyze(root, options=None):
             warnings.append(f'A reconstrução existente tem {len(components)} componentes separadas; verifique cobertura e continuidade da captura.')
         if any(c['extreme_points'] or c['nonfinite'] for c in components):
             warnings.append('A reconstrução existente contém pontos extremos ou não finitos. Inspecione a geometria antes da densificação; aumentar RAM não corrige esses valores.')
-    return {'photos': len(photos), 'videos': video_info, 'sample_count': len(samples), 'samples': samples,
+    return {'application': 'Paralaxe', 'photos': len(photos), 'videos': video_info, 'sample_count': len(samples), 'samples': samples,
             'warnings': warnings, 'errors': errors, 'geometry': geometry, 'motion_pairs': motion_pairs, 'extraction_report': extraction_report,
             'limitations': 'Triagem por amostragem com limiares heurísticos em imagens reduzidas a até 640 px. Movimento ORB/RANSAC é medido a até 800 px. Homografia dominante não distingue giro de cena plana e não mede paralaxe 3D, sobreposição ou probabilidade de falha; padrões repetidos e objetos móveis podem enganar as correspondências. Fotos não amostradas podem conter problemas. Nenhum original foi alterado.'}
 

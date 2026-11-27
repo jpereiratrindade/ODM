@@ -87,7 +87,7 @@ async function localVideo(file,action) {
     return await action(video,async seconds=>{localCheckCancel();const target=Math.min(seconds,Math.max(0,video.duration-.05));if(Math.abs(video.currentTime-target)<.001&&video.readyState>=2)return;await localEvent(video,'seeked',()=>{video.currentTime=target;});localCheckCancel();});
   } finally {video.pause();video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}
 }
-function localReportBase(type,options) {return {type,engine:'OpenCV.js 4.13.0 / WebAssembly',created:new Date().toISOString(),parameters:options,complete:false,files:localState.files.map(f=>({name:f.name,bytes:f.size,kind:localKind(f)})),samples:[],motion_pairs:[],warnings:[],errors:[],limitations:'Amostragem e limiares heurísticos. ORB e homografia RANSAC no navegador não medem paralaxe 3D nem distinguem giro de cena plana. Não usa o teste de matriz fundamental do servidor. Formatos dependem dos codecs do navegador. Nenhum vídeo é enviado; fotos extraídas não recebem GPS/SRT.'};}
+function localReportBase(type,options) {return {application:'Paralaxe',type,engine:'OpenCV.js 4.13.0 / WebAssembly',created:new Date().toISOString(),parameters:options,complete:false,files:localState.files.map(f=>({name:f.name,bytes:f.size,kind:localKind(f)})),samples:[],motion_pairs:[],warnings:[],errors:[],limitations:'Amostragem e limiares heurísticos. ORB e homografia RANSAC no navegador não medem paralaxe 3D nem distinguem giro de cena plana. Não usa o teste de matriz fundamental do servidor. Formatos dependem dos codecs do navegador. Nenhum vídeo é enviado; fotos extraídas não recebem GPS/SRT.'};}
 function localRenderReport() {
   const report=localState.report,box=local('local-report');box.replaceChildren();box.hidden=!report;if(!report)return;
   const title=document.createElement('h3');title.textContent=report.type==='extraction'?'Extração local de quadros':'Análise local de fotos e vídeo';box.append(title);
@@ -183,21 +183,21 @@ function localRenderOutputs() {
 function localRenderSelectionCount() {local('local-selection-summary').textContent=`${localSelected().length} de ${localState.outputs.length} fotos selecionadas. Fotos importadas não amostradas começam desmarcadas; selecioná-las não significa que foram verificadas.`;}
 function localDownload(blob,name) {const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 function localManifest(){return {...localState.report,selected_files:localSelected().map(x=>({file:x.name,bytes:x.blob.size,verified:x.verified}))};}
-local('local-save-report').addEventListener('click',()=>localDownload(new Blob([JSON.stringify(localManifest(),null,2)],{type:'application/json'}),'diagnostico-local.json'));
+local('local-save-report').addEventListener('click',()=>localDownload(new Blob([JSON.stringify(localManifest(),null,2)],{type:'application/json'}),'paralaxe-diagnostico.json'));
 local('local-save-zip').addEventListener('click',()=>localTask(async()=>{
   const files=localSelected();if(files.reduce((sum,x)=>sum+x.blob.size,0)>512*1048576)throw new Error('O ZIP excederia 512 MB. Salve em pasta ou exporte uma seleção menor.');
   const chunks=[];let failure=null;const zip=new fflate.Zip((error,chunk)=>{if(error)failure=error;else chunks.push(chunk);});
   for(const [index,entry] of files.entries()) {localCheckCancel();const file=new fflate.ZipPassThrough('images/'+entry.name);zip.add(file);file.push(new Uint8Array(await entry.blob.arrayBuffer()),true);localStatus(`Preparando ZIP: ${index+1}/${files.length}`);}
-  const report=new fflate.ZipPassThrough('diagnostico-local.json');zip.add(report);report.push(fflate.strToU8(JSON.stringify(localManifest(),null,2)),true);zip.end();if(failure)throw failure;
-  localDownload(new Blob(chunks,{type:'application/zip'}),'fotos-locais.zip');localStatus('Download ZIP preparado neste computador.');
+  const report=new fflate.ZipPassThrough('paralaxe-diagnostico.json');zip.add(report);report.push(fflate.strToU8(JSON.stringify(localManifest(),null,2)),true);zip.end();if(failure)throw failure;
+  localDownload(new Blob(chunks,{type:'application/zip'}),'paralaxe-fotos.zip');localStatus('Download ZIP preparado neste computador.');
 }));
 local('local-save-folder').addEventListener('click',async()=>{
   let directory;try {directory=await window.showDirectoryPicker({mode:'readwrite'});}catch(error){if(error.name!=='AbortError')localStatus(error.message);return;}
   localTask(async()=>{
-    const name='odm-local-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
+    const name='paralaxe-local-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
     const target=await directory.getDirectoryHandle(name,{create:true}),images=await target.getDirectoryHandle('images',{create:true});
     for(const entry of localSelected()) {localCheckCancel();const file=await images.getFileHandle(entry.name,{create:true}),stream=await file.createWritable();await stream.write(entry.blob);await stream.close();}
-    const file=await target.getFileHandle('diagnostico-local.json',{create:true}),stream=await file.createWritable();await stream.write(JSON.stringify(localManifest(),null,2));await stream.close();localStatus('Fotos e diagnóstico salvos na nova pasta '+name+'.');
+    const file=await target.getFileHandle('paralaxe-diagnostico.json',{create:true}),stream=await file.createWritable();await stream.write(JSON.stringify(localManifest(),null,2));await stream.close();localStatus('Fotos e diagnóstico salvos na nova pasta '+name+'.');
   });
 });
 async function localUpload() {
