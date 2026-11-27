@@ -22,8 +22,10 @@ from http.cookies import SimpleCookie, CookieError
 from urllib.parse import urlsplit, parse_qs
 if __package__:
     from .cleanup import CleanupManager
+    from . import flight_plan
 else:
     from cleanup import CleanupManager
+    import flight_plan
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = Path(__file__).resolve().parent / 'web'
@@ -155,7 +157,15 @@ class Workspace:
             code = None
         with self.lock:
             self.exit_code = code
-            self.state = 'cancelled' if self.state == 'stopping' else ('completed' if code == 0 else 'failed')
+            # External containers started with --rm may disappear before wait.
+            # ODM emits this marker only after successful completion; use only
+            # this execution's captured output, never a possibly stale log.json.
+            finished = code == 0 or (code is None and any(
+                re.search(r'\[INFO\]\s+ODM app finished - ', entry['text'])
+                for entry in self.logs))
+            self.state = 'cancelled' if self.state == 'stopping' else ('completed' if finished else 'failed')
+            if self.state == 'completed':
+                self.error = None
             if self.state == 'failed':
                 self.error = failure_message(self.logs) if code is not None else 'Não foi possível confirmar o resultado do container externo. Consulte o log do projeto.'
 
@@ -433,6 +443,112 @@ class Workspace:
             raise ValueError('Leitura EXIF requer Pillow no servidor ou motor Podman.')
         return dict(data, project=project, photo=name, photos=photos, source='EXIF/XMP da foto original')
 
+    def _flight_plan_camera(self, data):
+        profile_id = data.get('camera_profile', 'dji-mini-4-pro-12mp')
+        if profile_id and profile_id != 'custom':
+            return flight_plan.get_camera_profile(profile_id)
+        width_px = data.get('width_px', 4000)
+        height_px = data.get('height_px', 3000)
+        sensor_w = data.get('sensor_width_mm', 9.7)
+        sensor_h = data.get('sensor_height_mm')
+        if sensor_h is None and isinstance(width_px, int) and isinstance(height_px, int) and width_px > 0 and height_px > 0 and isinstance(sensor_w, (int, float)):
+            sensor_h = float(sensor_w) * (height_px / width_px)
+        return flight_plan.CameraProfile(
+            profile_id='custom',
+            name=str(data.get('camera_name') or 'Câmera personalizada')[:80],
+            width_px=width_px,
+            height_px=height_px,
+            sensor_width_mm=sensor_w,
+            sensor_height_mm=sensor_h,
+            focal_mm=data.get('focal_mm', 6.72),
+            min_interval_s=data.get('min_interval_s', 2.0),
+            sensor_source=str(data.get('sensor_source') or 'Parâmetros informados na interface')[:160],
+        )
+
+    def _flight_plan_polygon(self, data):
+        polygon = data.get('polygon')
+        if polygon is not None:
+            return polygon
+        center = data.get('center')
+        if not isinstance(center, dict):
+            raise ValueError('Informe um polígono ou as coordenadas do centro da área.')
+        return flight_plan.rectangle_polygon(
+            center.get('lon'),
+            center.get('lat'),
+            data.get('width_m'),
+            data.get('height_m'),
+            angle_deg=data.get('area_angle_deg', 0.0),
+        )
+
+    def flight_plan_preview(self, data):
+        camera = self._flight_plan_camera(data)
+        polygon = self._flight_plan_polygon(data)
+        mode = data.get('mode', 'direct')
+        if mode not in ('direct', 'inverse'):
+            raise ValueError('Modo de planejamento inválido.')
+        kwargs = {
+            'front_overlap': data.get('front_overlap', 0.8),
+            'side_overlap': data.get('side_overlap', 0.75),
+            'speed_ms': data.get('speed_ms'),
+            'heading_deg': data.get('heading_deg'),
+            'overshoot_m': data.get('overshoot_m', 0.0),
+            'vertical_reference': data.get('vertical_reference', 'relative_to_takeoff'),
+            'shutter_s': data.get('shutter_s'),
+            'max_blur_px': data.get('max_blur_px', 1.0),
+        }
+        if mode == 'inverse':
+            kwargs['target_gsd_cm'] = data.get('target_gsd_cm')
+        else:
+            kwargs['altitude_m'] = data.get('altitude_m')
+        return flight_plan.plan_grid(camera, polygon, **kwargs)
+
+    def flight_plan_export(self, data):
+        plan = self.flight_plan_preview(data)
+        fmt = data.get('format', 'json')
+        if fmt not in ('json', 'geojson', 'kml'):
+            raise ValueError('Formato de exportação inválido.')
+        name = str(data.get('name') or 'missao-001').strip()
+        if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}', name):
+            raise ValueError('Nome de missão inválido; use letras, números, hífen, ponto ou sublinhado.')
+
+        mission = flight_plan.mission_to_dict(plan, name=name)
+        geojson = flight_plan.mission_to_geojson(plan, name=name)
+        kml = flight_plan.mission_to_kml(plan, name=name)
+
+        if fmt == 'json':
+            content, filename, mime = json.dumps(mission, ensure_ascii=False, indent=2), f'{name}.mission.json', 'application/json'
+        elif fmt == 'geojson':
+            content, filename, mime = json.dumps(geojson, ensure_ascii=False, indent=2), f'{name}.geojson', 'application/geo+json'
+        else:
+            content, filename, mime = kml, f'{name}.kml', 'application/vnd.google-earth.kml+xml'
+
+        saved_dir = None
+        if data.get('save_to_project'):
+            if self.datasets is None:
+                raise ValueError('Indique uma pasta de levantamentos antes de salvar no projeto.')
+            project = data.get('project')
+            if not isinstance(project, str) or not project or project.startswith('.') or '/' in project or '\\' in project:
+                raise ValueError('Nome de projeto inválido.')
+            project_root = (self.datasets / project).resolve()
+            if project_root.parent != self.datasets or project_root.is_symlink():
+                raise ValueError('Projeto inválido para salvar planejamento.')
+            target_dir = (project_root / 'flight_plan' / name).resolve()
+            if not target_dir.is_relative_to(project_root):
+                raise ValueError('Caminho inválido para salvar missão.')
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / 'mission.json').write_text(json.dumps(mission, ensure_ascii=False, indent=2), encoding='utf-8')
+            (target_dir / 'planned_route.geojson').write_text(json.dumps(geojson, ensure_ascii=False, indent=2), encoding='utf-8')
+            (target_dir / 'mission.kml').write_text(kml, encoding='utf-8')
+            saved_dir = str(target_dir)
+
+        return {
+            'filename': filename,
+            'mime': mime,
+            'content': content,
+            'plan': plan,
+            'saved_dir': saved_dir,
+        }
+
     def media_path(self, project, name):
         root = self.project_path(project)
         images = (root / 'images').resolve()
@@ -681,6 +797,10 @@ class Workspace:
             report = self.preflight(data)
             if report['errors']:
                 raise ValueError('Verificação das imagens: ' + '; '.join(report['errors']))
+            if not report.get('georeferencing', {}).get('ready'):
+                raise ValueError('Georreferenciamento obrigatório: todas as fotos devem ter latitude, longitude e altitude GPS válidas. Corrija os metadados e analise novamente.')
+            if data.get('confirm-georeferencing') is not True:
+                raise ValueError('Confirme a revisão do georreferenciamento no diagnóstico antes de iniciar.')
             self.process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT, text=True,
                                             encoding='utf-8', errors='replace',
@@ -957,7 +1077,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.connection.settimeout(60)
                 query = parse_qs(urlsplit(self.path).query)
                 return self.send(200, self.server.workspace.browser_upload_file(query.get('upload', [''])[0], query.get('name', [''])[0], self.rfile, length))
-            limit = 1024 * 1024 if self.path == '/api/local-upload-finish' else 8192
+            large_post = {'/api/local-upload-finish', '/api/flight-plan/preview', '/api/flight-plan/export'}
+            limit = 1024 * 1024 if self.path in large_post else 8192
             if not 0 < length <= limit:
                 raise ValueError('Pedido inválido.')
             data = json.loads(self.rfile.read(length))
@@ -983,6 +1104,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, workspace.tool_context(data).preflight(data))
             if self.path == '/api/planning':
                 return self.send(200, workspace.tool_context(data).planning(data.get('project'), data.get('file')))
+            if self.path == '/api/flight-plan/preview':
+                return self.send(200, workspace.flight_plan_preview(data))
+            if self.path == '/api/flight-plan/export':
+                return self.send(200, workspace.flight_plan_export(data))
             if self.path == '/api/media-list':
                 return self.send(200, {'files': workspace.tool_context(data).media_list(data.get('project'))})
             if self.path == '/api/photo':

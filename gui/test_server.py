@@ -63,6 +63,34 @@ class WorkspaceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             workspace.cleanup('execute', {'project': 'flight'})
 
+    def test_georeferencing_and_confirmation_block_processing(self):
+        for geo, confirmation in [({'ready': False}, True), ({'ready': True}, False), ({}, True)]:
+            with self.subTest(geo=geo, confirmation=confirmation), \
+                    patch.object(self.workspace, 'preflight', return_value={'errors': [], 'georeferencing': geo}), \
+                    patch('gui.server.subprocess.Popen') as process:
+                with self.assertRaisesRegex(ValueError, 'Georreferenciamento|Confirme'):
+                    self.workspace.start({'project': 'flight', 'confirm-georeferencing': confirmation})
+                process.assert_not_called()
+
+    def test_external_completion_when_container_has_been_removed(self):
+        from subprocess import CompletedProcess
+        for code, marker, stopping, expected in [
+                (None, True, False, 'completed'),
+                (None, False, False, 'failed'),
+                (1, True, False, 'failed'),
+                (None, True, True, 'cancelled')]:
+            with self.subTest(code=code, marker=marker, stopping=stopping):
+                workspace = Workspace(self.root, engine='podman')
+                workspace.state = 'stopping' if stopping else 'running'
+                if marker:
+                    workspace.logs.append({'id': 1, 'text': '\x1b[39m[INFO]    ODM app finished - test\x1b[0m'})
+                result = CompletedProcess([], 125 if code is None else 0,
+                                          '' if code is None else str(code), '')
+                with patch.object(workspace, 'read_logs'), patch('gui.server.subprocess.run', return_value=result):
+                    workspace.collect_external(None, 'removed-container')
+                self.assertEqual(workspace.state, expected)
+                self.assertEqual(workspace.exit_code, code)
+
     def test_external_discovery_ignores_other_mounts(self):
         workspace = Workspace(self.root, engine='podman')
         from subprocess import CompletedProcess
@@ -79,7 +107,7 @@ class WorkspaceTests(unittest.TestCase):
         with patch.object(self.workspace, 'preflight', return_value={'errors': ['Foto inválida']}), \
                 patch('gui.server.subprocess.Popen') as popen:
             with self.assertRaisesRegex(ValueError, 'Foto inválida'):
-                self.workspace.start({'project': 'flight'})
+                self.workspace.start({'project': 'flight', 'confirm-georeferencing': True})
             popen.assert_not_called()
 
     def test_extraction_parameters_are_validated_and_forwarded(self):
@@ -265,8 +293,8 @@ class WorkspaceTests(unittest.TestCase):
     def test_real_process_logs_exit_and_cursor(self):
         command = [sys.executable, '-u', '-c', "print('test log'); print('Running odm_dem stage'); raise SystemExit(7)"]
         with patch.object(self.workspace, 'prepare', return_value=command), \
-                patch.object(self.workspace, 'preflight', return_value={'errors': []}):
-            self.workspace.start({'project': 'flight'})
+                patch.object(self.workspace, 'preflight', return_value={'errors': [], 'georeferencing': {'ready': True}}):
+            self.workspace.start({'project': 'flight', 'confirm-georeferencing': True})
         self.wait_finished()
         status = self.workspace.snapshot()
         self.assertEqual(status['state'], 'failed')
@@ -278,11 +306,11 @@ class WorkspaceTests(unittest.TestCase):
     def test_cancel_and_reject_concurrent_run(self):
         command = [sys.executable, '-u', '-c', 'import time; time.sleep(30)']
         with patch.object(self.workspace, 'prepare', return_value=command), \
-                patch.object(self.workspace, 'preflight', return_value={'errors': []}):
-            self.workspace.start({'project': 'flight'})
+                patch.object(self.workspace, 'preflight', return_value={'errors': [], 'georeferencing': {'ready': True}}):
+            self.workspace.start({'project': 'flight', 'confirm-georeferencing': True})
             try:
                 with self.assertRaises(ValueError):
-                    self.workspace.start({'project': 'flight'})
+                    self.workspace.start({'project': 'flight', 'confirm-georeferencing': True})
             finally:
                 self.workspace.stop()
         self.wait_finished()

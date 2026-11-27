@@ -117,6 +117,41 @@ def geometry_report(root):
         return {'unavailable': True}
 
 
+def georeferencing_report(photos, videos):
+    """Inspect every photo header; coordinates are evidence, not an accuracy certificate."""
+    from PIL import Image
+    valid, missing = 0, []
+    for path in photos:
+        try:
+            with Image.open(path) as image:
+                gps = image.getexif().get_ifd(34853)
+            def coordinate(tag, ref_tag, positive, negative, bound):
+                parts = [float(v) for v in gps[tag]]
+                ref = gps[ref_tag]
+                if isinstance(ref, bytes):
+                    ref = ref.decode('ascii')
+                if len(parts) != 3 or ref not in (positive, negative):
+                    raise ValueError('Invalid GPS')
+                if not all(math.isfinite(v) for v in parts) or not (0 <= parts[0] <= bound and 0 <= parts[1] < 60 and 0 <= parts[2] < 60):
+                    raise ValueError('Invalid GPS')
+                value = parts[0] + parts[1] / 60 + parts[2] / 3600
+                if value > bound:
+                    raise ValueError('Invalid GPS')
+                return value * (-1 if ref == negative else 1)
+            lat = coordinate(2, 1, 'N', 'S', 90)
+            lon = coordinate(4, 3, 'E', 'W', 180)
+            altitude = float(gps[6])
+            if not math.isfinite(altitude) or gps.get(5, 0) not in (0, 1, b'\x00', b'\x01') or (lat == 0 and lon == 0):
+                raise ValueError('Missing or invalid position')
+            valid += 1
+        except (OSError, ValueError, TypeError, KeyError, IndexError, ZeroDivisionError, AttributeError):
+            if len(missing) < 10:
+                missing.append(path.name)
+    return {'checked': len(photos), 'valid': valid, 'missing': len(photos) - valid,
+            'examples': missing, 'ready': bool(photos) and valid == len(photos) and not videos,
+            'method': 'GPS EXIF: latitude, longitude e altitude em todas as fotos. Não certifica acurácia nem referência vertical. XMP, SRT e GCP ainda não são validados por esta verificação.'}
+
+
 def analyze(root, options=None):
     import cv2
     import numpy as np
@@ -128,6 +163,9 @@ def analyze(root, options=None):
     photos = [p for p in files if p.suffix.lower() in PHOTO_TYPES]
     videos = [p for p in files if p.suffix.lower() in VIDEO_TYPES]
     warnings, errors, samples, video_info = [], [], [], []
+    georeferencing = georeferencing_report(photos, videos)
+    if not georeferencing['ready']:
+        warnings.append(f"Georreferenciamento obrigatório pendente: {georeferencing['valid']} de {len(photos)} fotos com latitude, longitude e altitude GPS EXIF válidas. Vídeos e arquivos SRT não transferem posições automaticamente. Processamento bloqueado até corrigir os metadados.")
     def record(gray, name, source, previous):
         metrics, thumb = image_metrics(gray)
         difference = float(np.abs(thumb.astype(float) - previous.astype(float)).mean()) if previous is not None else None
@@ -241,7 +279,7 @@ def analyze(root, options=None):
         if any(c['extreme_points'] or c['nonfinite'] for c in components):
             warnings.append('A reconstrução existente contém pontos extremos ou não finitos. Inspecione a geometria antes da densificação; aumentar RAM não corrige esses valores.')
     return {'application': 'Paralaxe', 'photos': len(photos), 'videos': video_info, 'sample_count': len(samples), 'samples': samples,
-            'warnings': warnings, 'errors': errors, 'geometry': geometry, 'motion_pairs': motion_pairs, 'extraction_report': extraction_report,
+            'georeferencing': georeferencing, 'warnings': warnings, 'errors': errors, 'geometry': geometry, 'motion_pairs': motion_pairs, 'extraction_report': extraction_report,
             'limitations': 'Triagem por amostragem com limiares heurísticos em imagens reduzidas a até 640 px. Movimento ORB/RANSAC é medido a até 800 px. Homografia dominante não distingue giro de cena plana e não mede paralaxe 3D, sobreposição ou probabilidade de falha; padrões repetidos e objetos móveis podem enganar as correspondências. Fotos não amostradas podem conter problemas. Nenhum original foi alterado.'}
 
 

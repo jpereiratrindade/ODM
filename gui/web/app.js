@@ -201,6 +201,19 @@ async function checkInputs(forProcessing = false) {
   if (!$('extract-destination').value) $('extract-destination').value = config.project + '-quadros';
   const title = document.createElement('h3'); title.textContent = 'Verificação de imagens · ' + config.project; box.append(title);
   const summary = document.createElement('p'); summary.textContent = `${report.photos} fotos · ${report.videos.length} vídeos · ${report.sample_count} amostras verificadas. Avisos indicam riscos, sem prever com certeza o resultado.`; box.append(summary);
+  if (report.georeferencing) {
+    const geo = report.georeferencing;
+    const text = document.createElement('p');
+    text.textContent = `Georreferenciamento: ${geo.valid}/${geo.checked} fotos com GPS completo. ${geo.ready ? 'Metadados presentes; revise a origem e a precisão.' : 'PENDENTE — processamento bloqueado.'} ${geo.method}`;
+    box.append(text);
+    if (geo.examples.length) {const names = document.createElement('p'); names.textContent = 'Sem GPS completo: ' + geo.examples.join(', '); box.append(names);}
+    if (geo.ready) {
+      const label = document.createElement('label'), check = document.createElement('input');
+      check.type = 'checkbox'; check.id = 'confirm-georeferencing';
+      label.append(check, document.createTextNode(' Revisei o georreferenciamento e confirmo que estas fotos pertencem ao levantamento. GPS presente não garante acurácia.'));
+      box.append(label);
+    }
+  }
   const list = document.createElement('ul'); list.className = 'analysis-findings';
   for (const [severity, entries] of [['error', report.errors], ['warning', report.warnings]]) {
     for (const text of entries) {const item = document.createElement('li'); item.className = severity; const label = document.createElement('strong'); label.textContent = severity === 'error' ? 'Corrigir antes de iniciar: ' : 'Revisar: '; item.append(label, document.createTextNode(text)); list.append(item);}
@@ -279,7 +292,7 @@ $('run-form').addEventListener('submit', async event => {
       notice(report.errors.length ? 'Corrija os arquivos indicados antes de iniciar.' : 'Verificação concluída. Revise os avisos acima e clique novamente para iniciar.');
       selection(); return;
     }
-    const result = await api('run', configuration());
+    const result = await api('run', {...configuration(), 'confirm-georeferencing': $('confirm-georeferencing')?.checked === true});
     cursor = 0;
     $('logs').textContent = '';
     render(result);

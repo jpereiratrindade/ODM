@@ -421,3 +421,20 @@ o teste de Worker e a integração de navegador descritos acima. A integração 
 Firefox e ffmpeg e trabalha em pastas temporárias, sem depender de fotos privadas.
 O manifesto fornece nome e ícones para o navegador; não há service worker nem
 promessa de funcionamento completo offline.
+
+### Georreferenciamento antes de processar
+
+O processamento exige latitude, longitude e altitude GPS EXIF válidas em todas
+as fotos e confirmação explícita no diagnóstico. A checagem lê os cabeçalhos de
+todas as fotos; a análise de nitidez e movimento continua por amostragem.
+GPS presente não certifica acurácia, sincronização, referência vertical ou escala.
+Arquivos somente com XMP, posições externas ou GCP ainda exigem integração de
+validação própria e são bloqueados por esta checagem conservadora.
+
+A análise e a extração de vídeos continuam disponíveis, mas o processamento de
+vídeos ou de quadros sem GPS fica bloqueado. A extração atual não transfere SRT
+ou telemetria. Preserve o vídeo original, os SRTs e os registros de voo; arquivos
+reexportados podem ter perdido esses dados. Não atribua a mesma coordenada a
+quadros diferentes para contornar a checagem. Um GeoTIFF com EPSG e tamanho de
+pixel pode conter pseudogeorreferenciamento; esses campos sozinhos não comprovam
+posição ou resolução espacial reais.

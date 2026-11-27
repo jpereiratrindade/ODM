@@ -86,6 +86,47 @@
         <p class="muted">Estime a resolução no solo (GSD) para câmera nadiral e terreno plano. Altura relativa ao terreno; resultado teórico, sem correção de relevo ou distorção.</p>
         <div class="planning-sources"><div class="planning-source-controls"><label>Dados do levantamento<select id="planning-project"></select></label><label>Foto de referência<select id="planning-photo"></select></label><button id="planning-reload" type="button" class="outline">Carregar dados do projeto</button></div><p id="planning-status" role="status" aria-live="polite">Selecione um levantamento para carregar dados da câmera.</p><dl id="planning-metadata" class="planning-metadata"></dl><p class="planning-note">Parâmetros pertencem à foto de referência, não à média de todas as câmeras. Confira a foto ao trabalhar com sensores ou voos diferentes.</p></div>
         <div class="flight-scene"><svg viewBox="0 0 700 210" role="img" aria-label="Esquema de câmera nadiral: altura acima do solo e largura da área fotografada"><defs><pattern id="ground-grid" width="28" height="20" patternUnits="userSpaceOnUse"><path d="M28 0H0V20" fill="none" stroke="#91cfc0" stroke-width=".7"/></pattern></defs><path d="M60 170 240 113 640 146 440 205Z" fill="url(#ground-grid)" stroke="#8ac9b8"/><path d="m350 53-135 112 265 12Z" fill="#2ea8e812" stroke="#70b9d8" stroke-dasharray="5 5"/><path d="M350 60v110" stroke="#087f8c" stroke-dasharray="3 5"/><g fill="none" stroke="#18334b" stroke-width="3"><rect x="331" y="30" width="38" height="22" rx="7"/><path d="m331 35-21-13m59 13 21-13m-59 24-21 13m59-13 21 13M298 20h24m56 0h24M298 61h24m56 0h24"/><circle cx="350" cy="43" r="5"/></g><text x="363" y="112" fill="#087f8c" font-size="12">Altura do voo</text><text x="230" y="193" fill="#44796d" font-size="11">Área fotografada no solo</text><text x="42" y="44" fill="#577586" font-size="11">CÂMERA VOLTADA PARA O SOLO</text></svg><div><small class="eyebrow">CADA PIXEL CONTA</small><h3>Antes de voar,<br>encontre sua escala.</h3><p>Aproxime a resolução que suas fotos podem alcançar e planeje o nível de detalhe do levantamento.</p></div></div><div class="planning"><form id="gsd-form" class="form-grid"><label>Altura de voo · m<input id="altitude" type="number" value="100" min="1" max="10000" step="any" required><small id="altitude-source">Exemplo manual · altura acima do terreno</small></label><label>Largura do sensor · mm<input id="sensor" type="number" value="13.2" min="0.1" max="100" step="any" required><small id="sensor-source">Exemplo manual</small></label><label>Distância focal · mm<input id="focal" type="number" value="8.8" min="0.1" max="1000" step="any" required><small id="focal-source">Exemplo manual</small></label><label>Largura da imagem · pixels<input id="pixels" type="number" value="5472" min="1" max="100000" required><small id="pixels-source">Exemplo manual</small></label><div class="planning-calculate"><button type="submit" class="outline">Calcular GSD</button><button id="planning-use-relative" type="button" class="outline" hidden>Usar altura relativa como aproximação</button></div></form><output id="gsd-result" aria-live="polite"><small>GSD ESTIMADO</small><strong id="gsd">—</strong><span>cm/pixel</span><small id="gsd-method">Inicializando cálculo local</small></output></div>
+        <div class="mission-planner" id="mission-planner">
+          <div class="heading"><div><small class="eyebrow">PLANEJADOR DE MISSÃO · MARCO 001</small><h3>Grade nadiral e exportação aberta</h3></div><span class="tag">Funciona sem projeto</span></div>
+          <p class="muted">Planeje faixas nadirais sobre área retangular ou polígono convexo (GeoJSON). Não exige pasta ou fotos carregadas.</p>
+          <form id="mission-form" class="form-grid">
+            <label>Nome da missão<input id="mission-name" type="text" value="missao-001" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}" required></label>
+            <label>Câmera / Perfil<select id="mission-camera"><option value="dji-mini-4-pro-12mp">DJI Mini 4 Pro · 12 MP (2 s)</option><option value="dji-mini-4-pro-48mp">DJI Mini 4 Pro · 48 MP (5 s)</option><option value="custom">Personalizada (usar campos GSD acima)</option></select></label>
+            <label>Modo de cálculo<select id="mission-mode"><option value="direct">Direto (informar altitude)</option><option value="inverse">Inverso (informar GSD desejado)</option></select></label>
+            <label id="mission-altitude-wrap">Altura de voo · m<input id="mission-altitude" type="number" value="60" min="5" max="500" step="0.5" required></label>
+            <label id="mission-gsd-wrap" hidden>GSD desejado · cm/px<input id="mission-gsd-target" type="number" value="2.0" min="0.2" max="50" step="0.1"></label>
+            <label>Referência vertical<select id="mission-vref"><option value="relative_to_takeoff">Relativa à decolagem (DJI Fly)</option><option value="agl">AGL (terreno plano conhecido)</option><option value="msl">MSL (nível médio do mar)</option></select></label>
+            <label>Sobreposição frontal · %<input id="mission-front" type="number" value="80" min="10" max="95" step="1" required></label>
+            <label>Sobreposição lateral · %<input id="mission-side" type="number" value="75" min="10" max="95" step="1" required></label>
+            <label>Velocidade · m/s<input id="mission-speed" type="number" value="4.0" min="0.5" max="20" step="0.5" required></label>
+            <label>Ângulo das faixas · ° (vazio = auto)<input id="mission-heading" type="number" min="0" max="359.9" step="1" placeholder="Automático"></label>
+            <label>Margem (overshoot) · m<input id="mission-overshoot" type="number" value="0" min="0" max="100" step="1" required></label>
+            <label>Centro Latitude (°)<input id="mission-lat" type="number" value="-29.700000" min="-85" max="85" step="any" required></label>
+            <label>Centro Longitude (°)<input id="mission-lon" type="number" value="-53.800000" min="-180" max="180" step="any" required></label>
+            <label>Largura da área · m<input id="mission-width" type="number" value="200" min="10" max="5000" step="5" required></label>
+            <label>Comprimento da área · m<input id="mission-height" type="number" value="120" min="10" max="5000" step="5" required></label>
+            <label>Rotação da área · °<input id="mission-area-angle" type="number" value="0" min="-180" max="180" step="1" required></label>
+            <label>Importar polígono GeoJSON (opcional)<input id="mission-geojson-file" type="file" accept=".geojson,.json"></label>
+            <div class="planning-calculate"><button type="submit">Gerar plano de voo</button><button id="mission-clear-polygon" type="button" class="outline" hidden>Voltar para retângulo</button></div>
+          </form>
+          <p id="mission-status" role="status" aria-live="polite">Configure os parâmetros e clique em Gerar plano de voo.</p>
+          <div id="mission-output" hidden>
+            <div class="mission-stats">
+              <article><span>GSD NOMINAL</span><strong id="mission-stat-gsd">—</strong><small id="mission-stat-alt">—</small></article>
+              <article><span>ÁREA · FAIXAS</span><strong id="mission-stat-area">—</strong><small id="mission-stat-strips">—</small></article>
+              <article><span>FOTOS · WAYPOINTS</span><strong id="mission-stat-photos">—</strong><small id="mission-stat-speed">—</small></article>
+              <article><span>TEMPO · BATERIAS</span><strong id="mission-stat-time">—</strong><small id="mission-stat-dist">—</small></article>
+            </div>
+            <canvas id="mission-canvas" width="760" height="380" aria-label="Prévia geométrica da grade de voo"></canvas>
+            <ul id="mission-warnings" class="mission-warnings" hidden></ul>
+            <div class="mission-exports">
+              <button id="export-mission-json" type="button" class="outline">Baixar mission.json</button>
+              <button id="export-mission-geojson" type="button" class="outline">Baixar GeoJSON</button>
+              <button id="export-mission-kml" type="button" class="outline">Baixar KML</button>
+              <button id="save-mission-project" type="button" class="outline">Salvar no projeto</button>
+            </div>
+          </div>
+        </div>
       </section>
       <section class="panel" id="resultados"><div class="heading"><div><small class="eyebrow">SEUS RESULTADOS</small><h2>Seu território, em novas formas</h2></div><button id="refresh" class="outline" type="button">Atualizar</button></div><p class="muted">Uma coleção dos produtos do seu levantamento. Os cartões indicam quais arquivos já estão disponíveis na pasta do projeto.</p><label>Levantamento dos produtos<select id="result-project"></select></label><div id="result-history" class="history-box" hidden></div><ul id="outputs"><li>Selecione um projeto.</li></ul></section>
       <section class="panel" id="visualizar" hidden>

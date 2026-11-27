@@ -19,6 +19,28 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(selected(range(1000), 3), [0, 500, 999])
 
 
+class GeoreferencingTests(unittest.TestCase):
+    def test_complete_partial_invalid_and_video_gps(self):
+        from unittest.mock import patch, MagicMock
+        from gui.preflight import georeferencing_report
+        gps = {1: 'S', 2: (30, 10, 0), 3: 'W', 4: (51, 20, 0), 5: 0, 6: 100}
+        photo = Path('one.jpg')
+        image = MagicMock()
+        with patch('PIL.Image.open', return_value=image):
+            read = image.__enter__.return_value.getexif.return_value.get_ifd
+            read.return_value = gps
+            self.assertTrue(georeferencing_report([photo], [])['ready'])
+            self.assertFalse(georeferencing_report([photo], [Path('clip.mp4')])['ready'])
+            for invalid in [{}, dict(gps, **{}) | {6: float('nan')}, gps | {2: (91, 0, 0)}, gps | {1: 'X'}, gps | {2: (0, 0, 0), 4: (0, 0, 0)}]:
+                read.return_value = invalid
+                self.assertFalse(georeferencing_report([photo], [])['ready'])
+            read.side_effect = [gps, {}]
+            result = georeferencing_report([photo, Path('two.jpg')], [])
+            self.assertEqual((result['valid'], result['missing']), (1, 1))
+            self.assertEqual(result['examples'], ['two.jpg'])
+        self.assertFalse(georeferencing_report([], [])['ready'])
+
+
 try:
     import cv2
     import numpy as np

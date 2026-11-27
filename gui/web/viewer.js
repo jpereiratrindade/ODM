@@ -118,7 +118,7 @@ async function showProduct() {
       data.center = min.map((value,i) => (value + max[i]) / 2);
       data.span = Math.max(...max.map((value,i) => value - min[i]), 1);
       data.zRange = [min[2],max[2]];
-      v('viewer-status').textContent = data.note || 'Amostra espacial da nuvem real. Arraste para girar; cores representam altura relativa.';
+      v('viewer-status').textContent = data.note || 'Amostra espacial da nuvem real. Arraste para girar; Shift + arraste para deslocar; use a roda para aproximar. Cores representam altura relativa.';
       infoRow('Pontos exibidos', `${data.points.length.toLocaleString('pt-BR')} de ${data.total.toLocaleString('pt-BR')}`);
       infoRow('Visualização', product === 'model' ? 'Vértices amostrados; sem faces ou texturas' : 'Amostra 3D · cores por altura');
     }
@@ -160,7 +160,7 @@ function drawViewer() {
       const cos = Math.cos(angle), sin = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt);
       for (const point of data.points) {
         const x=point[0]-data.center[0],y=point[1]-data.center[1],z=point[2]-data.center[2];
-        const px=(x*cos+y*sin)*scale+width/2, py=((y*cos-x*sin)*ct-z*st)*scale+height/2;
+        const px=(x*cos+y*sin)*scale+width/2+panX, py=((y*cos-x*sin)*ct-z*st)*scale+height/2+panY;
         const hue=190-(point[2]-data.zRange[0])/Math.max(data.zRange[1]-data.zRange[0],.001)*130;
         context.fillStyle=`hsl(${hue} 68% 47%)`; context.fillRect(px,py,1.6,1.6);
       }
@@ -168,17 +168,31 @@ function drawViewer() {
   });
 }
 
+// Keep the point under the cursor fixed while changing magnification.
+function zoomViewer(factor, x, y) {
+  if (!viewerData) return;
+  const rect = canvas.getBoundingClientRect();
+  const next = Math.max(.05, Math.min(256, zoom * factor));
+  const relative = next / zoom;
+  x = (x ?? rect.width / 2) - rect.width / 2;
+  y = (y ?? rect.height / 2) - rect.height / 2;
+  panX = x - (x - panX) * relative;
+  panY = y - (y - panY) * relative;
+  zoom = next;
+  drawViewer();
+}
+
 v('viewer-project').addEventListener('change', updateViewerProducts);
 v('viewer-product').addEventListener('change', clearViewer);
 v('viewer-load').addEventListener('click', showProduct);
-v('viewer-in').addEventListener('click', () => { zoom=Math.min(zoom*1.4,30);drawViewer(); });
-v('viewer-out').addEventListener('click', () => { zoom=Math.max(zoom/1.4,.15);drawViewer(); });
+v('viewer-in').addEventListener('click', () => { zoomViewer(1.5); });
+v('viewer-out').addEventListener('click', () => { zoomViewer(1/1.5); });
 v('viewer-fit').addEventListener('click', () => { zoom=1;panX=panY=0;angle=.3;tilt=.9;drawViewer(); });
-canvas.addEventListener('pointerdown', event => { if (!viewerData) return; dragging=[event.clientX,event.clientY];canvas.setPointerCapture(event.pointerId); });
+canvas.addEventListener('pointerdown', event => { if (!viewerData) return; dragging=[event.clientX,event.clientY,event.shiftKey || event.button === 2];canvas.setPointerCapture(event.pointerId); });
 canvas.addEventListener('pointermove', event => {
   if (!dragging) return;
-  const dx=event.clientX-dragging[0],dy=event.clientY-dragging[1];dragging=[event.clientX,event.clientY];
-  if (viewerData?.kind === 'points') { angle+=dx*.008;tilt=Math.max(.05,Math.min(1.55,tilt+dy*.008)); }
+  const dx=event.clientX-dragging[0],dy=event.clientY-dragging[1];dragging=[event.clientX,event.clientY,dragging[2]];
+  if (viewerData?.kind === 'points' && !dragging[2]) { angle+=dx*.008;tilt=Math.max(.05,Math.min(1.55,tilt+dy*.008)); }
   else { panX+=dx;panY+=dy; }
   drawViewer();
 });
@@ -186,8 +200,8 @@ canvas.addEventListener('pointerup', () => { dragging=null; });
 canvas.addEventListener('pointercancel', () => { dragging=null; });
 canvas.addEventListener('keydown', event => {
   if (!viewerData) return;
-  if (event.key === '+' || event.key === '=') zoom=Math.min(zoom*1.2,30);
-  else if (event.key === '-') zoom=Math.max(zoom/1.2,.15);
+  if (event.key === '+' || event.key === '=') zoomViewer(1.5);
+  else if (event.key === '-') zoomViewer(1/1.5);
   else if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
     if (viewerData.kind === 'points') {
       angle += event.key === 'ArrowLeft' ? -.1 : event.key === 'ArrowRight' ? .1 : 0;
@@ -196,5 +210,13 @@ canvas.addEventListener('keydown', event => {
   } else return;
   event.preventDefault();drawViewer();
 });
-canvas.addEventListener('wheel', event => { if (!viewerData) return;event.preventDefault();zoom=Math.max(.15,Math.min(30,zoom*(event.deltaY<0?1.12:1/1.12)));drawViewer(); },{passive:false});
+canvas.addEventListener('contextmenu', event => event.preventDefault());
+canvas.addEventListener('wheel', event => {
+  if (!viewerData) return;
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1);
+  zoomViewer(Math.exp(-Math.max(-500, Math.min(500, delta)) * .003),
+             event.clientX - rect.left, event.clientY - rect.top);
+}, {passive:false});
 new ResizeObserver(drawViewer).observe(v('viewer-stage'));
