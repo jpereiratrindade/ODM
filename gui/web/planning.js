@@ -4,11 +4,11 @@ let planningGlobal = null, planningLoadedProject = null, planningData = null, pl
 let planningHeightMode = 'manual';
 
 function updatePlanningProjects() {
-  const globalProject = p('project').value, current = p('planning-project').value;
+  const globalProject = toolSources.planning ? toolSources.planning.projects[0].name : p('project').value, current = p('planning-project').value;
   const selected = globalProject !== planningGlobal ? globalProject : current || globalProject;
   planningGlobal = globalProject;
   p('planning-project').replaceChildren();
-  for (const project of projects) p('planning-project').add(new Option(project.name,project.name));
+  for (const project of toolProjects('planning')) p('planning-project').add(new Option(project.name,project.name));
   if (selected) p('planning-project').value = selected;
   if (current !== p('planning-project').value) loadPlanning();
 }
@@ -27,16 +27,17 @@ async function loadPlanning(file) {
   const project=p('planning-project').value;
   if (!project) return;
   const serial=++planningSerial;
-  const differentProject=project!==planningLoadedProject;
+  const identity = toolIdentity('planning', project);
+  const differentProject=identity!==planningLoadedProject;
   if (differentProject || planningHeightMode==='relative') {
     p('altitude').value='';p('altitude-source').textContent='Informe altura acima do terreno · altitude GPS não é usada';planningHeightMode='manual';
   }
   clearPlanningFields();p('planning-metadata').replaceChildren();planningData=null;
   p('planning-status').textContent='Lendo EXIF/XMP da foto original…';
   try {
-    const data=await api('planning',{project,...(typeof file==='string'&&file?{file}:{})});
+    const data=await api('planning',toolArguments('planning',{project,...(typeof file==='string'&&file?{file}:{})}));
     if (serial!==planningSerial) return;
-    planningData=data;planningLoadedProject=project;
+    planningData=data;planningLoadedProject=identity;
     p('planning-photo').replaceChildren();
     for (const name of data.photos) p('planning-photo').add(new Option(name,name));
     p('planning-photo').value=data.photo;

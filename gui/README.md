@@ -293,9 +293,76 @@ node -e "WebAssembly.instantiate(require('fs').readFileSync('gui/web/wasm/gsd.wa
 
 Resultado esperado do exemplo: aproximadamente **2,7412 cm/pixel**.
 
-Servidor restrito a loopback, sem CORS; troca de pasta e início/parada exigem
+Por padrão, servidor restrito a loopback, sem CORS; troca de pasta e início/parada exigem
 origem local e token por sessão. A navegação de pastas também exige o token;
 permite explorar diretórios acessíveis ao usuário do servidor, sem listar arquivos.
 Projetos ficam limitados aos filhos diretos
 da pasta de datasets escolhida explicitamente na interface ou na inicialização.
 Este servidor experimental destina-se a uma máquina local e um usuário.
+
+### Execuções iniciadas fora da interface
+
+No motor Podman, a interface detecta containers ativos com `--project-path` e montagem do projeto em `/datasets/<nome>`. Ela acompanha os últimos 2.000 registros e os novos logs, identifica a execução como externa e bloqueia limpeza e novo processamento. O botão de interrupção atua no container acompanhado. Após reiniciar a interface, a execução ativa é detectada novamente. A descoberta consulta containers do usuário atual a cada cinco segundos; processos nativos externos ainda não são detectados.
+
+### Verificação antes do processamento
+
+O botão **Verificar fotos e vídeos** faz uma triagem sem alterar originais. Se ainda não houver uma verificação da configuração atual, o primeiro clique para criar produtos mostra o relatório; o segundo inicia. Arquivos amostrados que não podem ser decodificados impedem o início. Avisos de qualidade permanecem informativos.
+
+A análise usa até 32 pares de fotos adjacentes em ordem natural e até 12 pares de quadros por vídeo, nos primeiros quatro vídeos. Nitidez (variância do Laplaciano < 40), exposição (> 60% de pixels quase pretos ou brancos), contraste (desvio padrão < 12) e semelhança (diferença média < 2 em miniaturas 64 × 36) são heurísticas, não um diagnóstico ou probabilidade de falha. A nitidez é avaliada com largura de até 640 pixels. A verificação mede deslocamento visual e consistência de correspondências, mas não mede sobreposição ou paralaxe 3D nem reconhece telas ou movimento da cena.
+
+Quando existe `opensfm/reconstruction.json`, o relatório mostra componentes e pontos não finitos ou além de 100 vezes o raio do percentil 99, medido a partir do centro mediano da componente. É um aviso sobre a reconstrução existente, sem filtrar pontos nem garantir a geometria da próxima execução.
+
+A interface permite escolher limite global de quadros (500), resolução de extração (2.000 px) e paralelismo (8). O intervalo nominal é apenas duração dividida por limite menos um; os filtros do ODM determinam os quadros efetivamente extraídos. Fotos já existentes não são redimensionadas. A verificação usa OpenCV local ou a imagem ODM instalada, com montagem somente para leitura; não modifica os filtros internos de extração do ODM.
+
+### Movimento entre quadros e extração em novo projeto
+
+A triagem compara até 32 pares de fotos vizinhas na ordem natural e até 12 pares por vídeo no trecho escolhido. Os vídeos são testados no intervalo de candidatos configurado, aumentado quando necessário para distribuir o limite pelo trecho inteiro. ORB usa correspondências mútuas com teste de razão 0,75; RANSAC testa homografia (3 px) e matriz fundamental (1,5 px), em imagens de até 800 px. Com menos de 20 correspondências, o resultado é indeterminado. Movimento abaixo de 0,3% da diagonal com resíduo de homografia abaixo de 0,15% sinaliza pouca mudança; homografia com mais de 90% de suporte e baixo resíduo sinaliza ambiguidade entre giro, cena plana e pouca paralaxe. Não é uma estimativa de rotação ou profundidade. Padrões repetidos e objetos móveis podem enganar os modelos.
+
+**Seleção de quadros por movimento** permite escolher início/fim em segundos, intervalo mínimo entre candidatos (1 s), nitidez mínima (40 na imagem de até 640 px), deslocamento mínimo (0,8% da diagonal) e intervalo de segurança (5 s). O botão **Extrair para novo projeto** utiliza esses controles, o limite de fotos e a resolução, sem modificar a extração automática do ODM. Esta última continua usando somente limite e resolução. A extração personalizada não pode começar enquanto há outro processamento ativo na interface.
+
+O destino deve ser um projeto novo. O vídeo é montado somente para leitura e os JPGs são gravados com qualidade 95, sem ampliar a resolução original. O limite distribui candidatos pelo trecho inteiro; filtros podem resultar em menos fotos. Baixa nitidez e mais de 80% de pixels quase pretos/brancos descartam candidatos. O movimento é comparado com o último quadro aceito; após o intervalo de segurança, baixa movimentação pode ser aceita e registrada como `safety_gap`. Esse intervalo não garante um espaçamento máximo, pois não força imagens ruins. Quadros sem correspondências suficientes ou com baixa consistência são preservados para revisão, sem eliminar silenciosamente possíveis ligações entre trechos.
+
+`extraction.json` registra parâmetros, intervalo efetivo, índices, tempos, métricas e motivos de aceitação/descarte. Uma extração cancelada pode deixar um projeto parcial, com manifesto incompleto. Menos de três fotos gera falha com os arquivos preservados. A triagem lê esse diagnóstico ao analisar o novo projeto. A extração não inicia a reconstrução e não transfere metadados GPS/SRT: mantenha os vídeos e arquivos auxiliares originais.
+
+### Ferramentas de análise no frontend
+
+A seção independente **Analisar imagens**, acessível pelo menu como **Planejar um voo**, reúne diagnóstico e extração com seleção do levantamento. Essas ferramentas não aparecem dentro de **Meu levantamento**. Ao iniciar sem uma verificação atual, a interface abre a seção de análise para revisão; o relatório oferece um link para voltar à configuração do processamento. Diagnóstico e extração são apresentados em cartões separados. O relatório distingue impedimentos de avisos, mostra a contagem das amostras e recebe foco visual após a análise. Intervalo, nitidez e movimento continuam disponíveis em **Configurar seleção por movimento**. O paralelismo fica na configuração do processamento. A interface usa textos auxiliares maiores, bordas de campos mais visíveis e estados selecionados com preenchimento e contorno reforçados.
+
+### Pastas independentes nas ferramentas
+
+**Analisar imagens**, **Planejar um voo**, **Fotos e vídeos**, **Meus produtos** e **Visualizar resultados** têm um seletor próprio **Escolher outra pasta…**. Escolha a pasta de um projeto com `images/`. A escolha vale para aquela ferramenta, inclusive metadados, miniaturas, vídeos, PDFs e downloads, sem mudar a pasta global, o comando ou o processo ativo. **Usar pasta do processamento** retorna à origem global. As escolhas ficam na sessão da interface; ao atualizar a página, selecione novamente se necessário.
+
+Consultas podem ser feitas durante um processamento. As leituras usam contextos separados, identificados por referências de sessão e protegidos pelas mesmas verificações de caminho e autenticação. A extração continua sendo uma tarefa de gravação: aguarda o processamento terminar e salva o novo projeto na pasta global de projetos. Se ela ainda não estiver configurada, a interface pede uma pasta de saída. Escolher uma origem de ferramenta nunca autoriza limpeza ou troca do projeto em processamento.
+
+### Acesso pela rede local
+
+O padrão continua sendo `127.0.0.1`. Para escutar em IPv4 na rede local, use `--host 0.0.0.0`, informe os endereços aceitos com `--allowed-host` e indique um arquivo de senha com `--lan-password-file`. O arquivo deve conter uma senha de pelo menos 12 caracteres. O modo de rede recusa iniciar sem senha e sem endereços explícitos.
+
+```bash
+python3 gui/server.py --datasets ~/odm --host 0.0.0.0 \
+  --allowed-host 10.163.80.176 --allowed-host 10.163.4.160 \
+  --lan-password-file ~/.config/odm/lan-password
+```
+
+O navegador solicita usuário **odm** e a senha do arquivo, inclusive no acesso por localhost quando este modo está ativo. Todas as páginas, arquivos e APIs exigem essa autenticação. Os controles de sessão e origem continuam ativos; o Host deve estar na lista configurada e a origem das requisições deve corresponder ao endereço utilizado. Se o DHCP mudar o IP, atualize `--allowed-host` ao reiniciar. A autenticação Basic utiliza HTTP sem TLS: este modo se destina a redes confiáveis, sem encaminhamento público de porta. A porta precisa ser permitida pelo firewall da máquina e pelas regras da rede.
+
+### Fotos e vídeos no computador de quem acessa a página
+
+Em **Analisar imagens**, alterne entre **No servidor** e **Neste computador**. O segundo modo usa seleção de arquivos/pasta pelo navegador, prévia local, análise com OpenCV.js 4.13.0 em WebAssembly dentro de um Worker e decodificação de vídeo do próprio navegador. O vídeo é acessado por Blob URL; não é copiado inteiro para a memória do WASM e não é enviado. Formatos e codecs dependem do navegador. A aplicação não mede paralaxe 3D: usa ORB e homografia RANSAC, sem a matriz fundamental da análise Python. Os diagnósticos dos dois motores não são idênticos.
+
+A triagem local amostra até 32 pares de fotos e 12 pares do vídeo escolhido. A extração considera trecho, intervalo mínimo, limite de candidatos, resolução, nitidez, movimento mínimo e intervalo de segurança. Ela preserva quadros sem correspondências suficientes para revisão. Até 512 MB de JPEGs extraídos ficam em memória por lote; atingir esse limite interrompe a tarefa preservando a seleção parcial. Cancelar uma tarefa local não cancela o processamento no servidor. As fotos extraídas não recebem GPS/SRT.
+
+Fotos importadas não amostradas começam desmarcadas. A seleção pode ser revista antes de **Baixar diagnóstico JSON**, **Baixar fotos selecionadas em ZIP**, **Salvar em pasta deste computador** ou **Enviar fotos selecionadas**. ZIP usa fflate 0.8.2, com limite de 512 MB de fotos por arquivo para limitar uso de memória. Salvar diretamente em pasta usa File System Access API quando há contexto seguro (HTTPS ou localhost) e suporte do navegador; cada exportação cria uma subpasta nova. Em HTTP pela LAN, ou em navegadores sem esse recurso, use ZIP/JSON. Os arquivos locais e a seleção ficam apenas na memória da aba até serem salvos ou enviados; atualizá-la descarta esse estado.
+
+O envio é explícito, foto por foto, sem incluir o vídeo. Cria um projeto novo na pasta global de projetos do servidor e grava `browser-import.json`. Não inicia reconstrução nem troca o projeto ativo. Requer no mínimo três fotos, até 50 MB por foto e até 10 GB/10.000 fotos por projeto. Os nomes e assinaturas de formato são verificados; a análise posterior ainda deve validar o conteúdo. Envios incompletos são preservados como projetos parciais, sem autorização para processar; não há retomada automática após reiniciar a interface. Para tentar novamente, use outro nome de projeto. A reconstrução ODM continua no servidor; seus produtos podem ser baixados para o computador do usuário.
+
+As dependências ficam em `gui/web/vendor`, com licenças, origem e hashes, sem CDN em tempo de execução. A política de scripts da página permanece restrita. O Worker de análise permite os bindings dinâmicos necessários ao OpenCV.js, isolados da página.
+
+Validação adicional:
+
+```bash
+node gui/test_local_worker.cjs
+python -m gui.test_local_browser  # requer Firefox e ffmpeg
+```
+
+O teste real de navegador usa somente dados sintéticos e uma pasta temporária: verifica extração local, ausência de envio automático, envio explícito de JPEGs sem o vídeo, preservação de um processamento ativo e cancelamento.

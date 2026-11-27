@@ -12,12 +12,13 @@ const canvas = v('result-canvas');
 const context = canvas.getContext('2d');
 
 async function loadHistory() {
-  const project = v('project').value;
+  const project = v('result-project').value;
+  const identity = toolIdentity('results', project);
   v('result-history').hidden = true;
   if (!project) return;
   try {
-    const {history} = await api('results', {project});
-    if (v('project').value !== project || !history) return;
+    const {history} = await api('results', toolArguments('results', {project}));
+    if (toolIdentity('results', v('result-project').value) !== identity || !history) return;
     const profile = {low:'Explorar rápido',medium:'Equilíbrio',high:'Mais detalhes'}[history.quality] || history.quality;
     const box = v('result-history'); box.replaceChildren(); box.hidden = false;
     const heading = document.createElement('strong'); heading.textContent = history.success ? 'Último processamento concluído' : history.finished ? 'Último processamento não concluiu' : 'Processamento sem encerramento registrado';
@@ -29,24 +30,24 @@ async function loadHistory() {
 }
 
 function updateViewerProjects() {
-  const globalProject = v('project').value;
+  const globalProject = toolSources.viewer ? toolSources.viewer.projects[0].name : v('project').value;
   const previous = v('viewer-project').value;
   const selected = globalProject !== previousGlobalProject ? globalProject : previous || globalProject;
   previousGlobalProject = globalProject;
   const before = [...v('viewer-product').options].map(o => o.value).join(',');
   v('viewer-project').replaceChildren();
-  for (const project of projects) {
+  for (const project of toolProjects('viewer')) {
     v('viewer-project').add(new Option(`${project.name} · ${project.outputs.length} produtos`, project.name));
   }
   if (selected) v('viewer-project').value = selected;
-  const project = projects.find(p => p.name === v('viewer-project').value);
+  const project = toolProjects('viewer').find(p => p.name === v('viewer-project').value);
   const after = productInfo.flatMap((p,i) => project?.outputs.includes(p[2]) ? [productIds[i]] : []).join(',');
   if (previous !== v('viewer-project').value || before !== after) updateViewerProducts();
 }
 
 function updateViewerProducts() {
   const selected = v('viewer-product').value;
-  const project = projects.find(p => p.name === v('viewer-project').value);
+  const project = toolProjects('viewer').find(p => p.name === v('viewer-project').value);
   v('viewer-product').replaceChildren();
   productInfo.forEach(([title,,path], index) => {
     if (project?.outputs.includes(path)) v('viewer-product').add(new Option(title, productIds[index]));
@@ -70,7 +71,7 @@ function clearViewer() {
 }
 
 function outputUrl(product, inline = false) {
-  return '/api/output?' + new URLSearchParams({project:v('viewer-project').value, product, ...(inline ? {inline:'1'} : {})});
+  return '/api/output?' + new URLSearchParams(toolArguments('viewer',{project:v('viewer-project').value, product, ...(inline ? {inline:'1'} : {})}));
 }
 
 function setCanvasControls(enabled) {
@@ -97,7 +98,7 @@ async function showProduct() {
       v('viewer-status').textContent = 'Relatório PDF do processamento. Se o navegador não exibir, use Baixar arquivo original.';
       return;
     }
-    const data = await api('view', {project,product});
+    const data = await api('view', toolArguments('viewer', {project,product}));
     if (serial !== viewSerial) return;
     viewerData = data;
     if (data.kind === 'raster') {
@@ -131,7 +132,9 @@ async function showProduct() {
 }
 
 function openViewer(product) {
-  v('viewer-project').value = v('project').value;
+  if (toolSources.results) toolSources.viewer = toolSources.results; else delete toolSources.viewer;
+  updateToolSourceLabel('viewer'); updateViewerProjects();
+  v('viewer-project').value = v('result-project').value;
   updateViewerProducts(); v('viewer-product').value = product;
   location.hash = 'visualizar'; showProduct();
 }

@@ -6,17 +6,17 @@ let mediaLastGlobal = null;
 const mediaPageSize = 24;
 
 function mediaUrl(name, mode) {
-  return '/api/media?' + new URLSearchParams({project:m('media-project').value, file:name, mode});
+  return '/api/media?' + new URLSearchParams(toolArguments('media',{project:m('media-project').value, file:name, mode}));
 }
 function mediaSize(bytes) { return (bytes / 1048576).toLocaleString('pt-BR',{maximumFractionDigits:2}) + ' MB'; }
 
 function updateMediaProjects() {
-  const globalProject = m('project').value;
+  const globalProject = toolSources.media ? toolSources.media.projects[0].name : m('project').value;
   const current = m('media-project').value;
   const selected = globalProject !== mediaLastGlobal ? globalProject : current || globalProject;
   mediaLastGlobal = globalProject;
   m('media-project').replaceChildren();
-  for (const project of projects) m('media-project').add(new Option(project.name, project.name));
+  for (const project of toolProjects('media')) m('media-project').add(new Option(project.name, project.name));
   if (selected) m('media-project').value = selected;
   if (current !== m('media-project').value || !mediaFiles.length) loadMedia();
 }
@@ -25,10 +25,10 @@ async function loadMedia() {
   const serial = ++mediaListSerial;
   mediaFiles = []; renderMedia();
   const project = m('media-project').value;
-  if (!project) { m('media-status').textContent = 'Escolha a pasta do projeto em Meu levantamento para começar.'; return; }
+  if (!project) { m('media-status').textContent = 'Escolha a pasta de um projeto para começar.'; return; }
   m('media-status').textContent = 'Lendo arquivos do projeto…';
   try {
-    const result = await api('media-list', {project});
+    const result = await api('media-list', toolArguments('media', {project}));
     if (serial !== mediaListSerial) return;
     mediaFiles = result.files; mediaPage = 0; renderMedia();
   } catch (error) { if (serial === mediaListSerial) m('media-status').textContent = error.message; }
@@ -87,7 +87,7 @@ async function openMedia(index) {
     video.src=mediaUrl(file.name,'original');return;
   }
   try {
-    const data=await api('photo',{project:m('media-project').value,file:file.name});
+    const data=await api('photo',toolArguments('media',{project:m('media-project').value,file:file.name}));
     if(serial!==mediaOpenSerial)return;
     mediaBlob=URL.createObjectURL(new Blob([Uint8Array.from(atob(data.image),c=>c.charCodeAt(0))],{type:'image/jpeg'}));
     const image=m('media-photo');image.alt=file.name;image.src=mediaBlob;await image.decode();

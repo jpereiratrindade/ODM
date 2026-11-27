@@ -43,6 +43,96 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn('--dtm', command)
         self.assertNotIn(str(self.root), command)
 
+    def test_external_container_attachment_and_guards(self):
+        workspace = Workspace(self.root, engine='podman')
+        container = {'Id': 'external-id', 'State': {'Running': True},
+                     'Config': {'Cmd': ['--project-path', '/datasets', 'flight']},
+                     'Mounts': [{'Source': str(self.root / 'flight'), 'Destination': '/datasets/flight'}]}
+        from subprocess import CompletedProcess
+        with patch('gui.server.subprocess.run', side_effect=[
+                CompletedProcess([], 0, 'external-id', ''),
+                CompletedProcess([], 0, json.dumps([container]), '')]), \
+                patch('gui.server.subprocess.Popen'), patch('gui.server.threading.Thread'):
+            workspace.discover_external()
+        self.assertTrue(workspace.external)
+        self.assertEqual(workspace.state, 'running')
+        self.assertEqual(workspace.project, 'flight')
+        self.assertEqual(workspace.container_name, 'external-id')
+        with self.assertRaises(ValueError):
+            workspace.start({'project': 'flight'})
+        with self.assertRaises(ValueError):
+            workspace.cleanup('execute', {'project': 'flight'})
+
+    def test_external_discovery_ignores_other_mounts(self):
+        workspace = Workspace(self.root, engine='podman')
+        from subprocess import CompletedProcess
+        container = {'Id': 'other', 'State': {'Running': True},
+                     'Config': {'Cmd': ['--project-path', '/datasets', 'flight']},
+                     'Mounts': [{'Source': '/unrelated/flight', 'Destination': '/datasets/flight'}]}
+        with patch('gui.server.subprocess.run', side_effect=[
+                CompletedProcess([], 0, 'other', ''),
+                CompletedProcess([], 0, json.dumps([container]), '')]):
+            workspace.discover_external()
+        self.assertEqual(workspace.state, 'idle')
+
+    def test_preflight_errors_block_processing(self):
+        with patch.object(self.workspace, 'preflight', return_value={'errors': ['Foto inválida']}), \
+                patch('gui.server.subprocess.Popen') as popen:
+            with self.assertRaisesRegex(ValueError, 'Foto inválida'):
+                self.workspace.start({'project': 'flight'})
+            popen.assert_not_called()
+
+    def test_extraction_parameters_are_validated_and_forwarded(self):
+        command = self.workspace.prepare({'project': 'flight', 'video-limit': 120,
+                                          'video-resolution': 1920, 'max-concurrency': 4})
+        for key, value in [('video-limit', '120'), ('video-resolution', '1920'), ('max-concurrency', '4')]:
+            self.assertEqual(command[command.index('--' + key) + 1], value)
+            for invalid in [True, 0, '5', float('nan')]:
+                with self.assertRaises(ValueError):
+                    self.workspace.prepare({'project': 'flight', key: invalid})
+
+    def test_custom_extraction_targets_new_project_and_preserves_source(self):
+        source = self.root / 'flight' / 'images' / 'clip.mp4'
+        source.write_bytes(b'original')
+        workspace = Workspace(self.root, engine='native')
+        with patch('gui.server.importlib.util.find_spec', return_value=True), \
+                patch('gui.server.subprocess.Popen') as popen, patch('gui.server.threading.Thread'):
+            workspace.extract_video({'project': 'flight', 'file': 'clip.mp4',
+                                     'destination': 'flight-frames', 'extraction': {'interval': 2}})
+        self.assertEqual(source.read_bytes(), b'original')
+        self.assertTrue((self.root / 'flight-frames' / 'images').is_dir())
+        self.assertEqual(workspace.project, 'flight-frames')
+        self.assertEqual(workspace.state, 'running')
+        command = popen.call_args.args[0]
+        self.assertEqual(json.loads(command[-1])['interval'], 2)
+        workspace.state = 'idle'
+        with self.assertRaisesRegex(ValueError, 'já existe'):
+            workspace.extract_video({'project': 'flight', 'file': 'clip.mp4', 'destination': 'flight-frames'})
+        with self.assertRaises(ValueError):
+            workspace.extract_video({'project': 'flight', 'file': 'clip.mp4', 'destination': '../escape'})
+
+    def test_tool_source_does_not_change_active_processing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            other = Path(folder) / 'flight'
+            (other / 'images').mkdir(parents=True)
+            (other / 'images' / 'external.jpg').write_bytes(b'external')
+            workspace = self.workspace
+            workspace.state = 'running'; workspace.project = 'flight'; workspace.selected_project = 'flight'
+            workspace.command = ['processing-command']
+            opened = workspace.open_tool_source(str(other))
+            context = workspace.tool_context({'source': opened['source'], 'project': 'flight'})
+            self.assertEqual(context.media_path('flight', 'external.jpg'), other / 'images' / 'external.jpg')
+            self.assertEqual(workspace.datasets, self.root)
+            self.assertEqual(workspace.state, 'running')
+            self.assertEqual(workspace.command, ['processing-command'])
+            self.assertEqual(workspace.selected_project, 'flight')
+            self.assertEqual(workspace.open_tool_source(str(other / 'images'))['source'], opened['source'])
+            for data in [{'source': 'missing', 'project': 'flight'}, {'source': opened['source'], 'project': 'another'}]:
+                with self.assertRaises(ValueError):
+                    workspace.tool_context(data)
+            with self.assertRaises(ValueError):
+                workspace.open_tool_source(str(Path(folder)))
+
     def test_auto_engine_uses_existing_image_and_error_is_explained(self):
         with patch('gui.server.shutil.which', return_value='/usr/bin/podman'), \
                 patch('gui.server.Path.exists', return_value=False), \
@@ -174,7 +264,8 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_real_process_logs_exit_and_cursor(self):
         command = [sys.executable, '-u', '-c', "print('test log'); print('Running odm_dem stage'); raise SystemExit(7)"]
-        with patch.object(self.workspace, 'prepare', return_value=command):
+        with patch.object(self.workspace, 'prepare', return_value=command), \
+                patch.object(self.workspace, 'preflight', return_value={'errors': []}):
             self.workspace.start({'project': 'flight'})
         self.wait_finished()
         status = self.workspace.snapshot()
@@ -186,7 +277,8 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_cancel_and_reject_concurrent_run(self):
         command = [sys.executable, '-u', '-c', 'import time; time.sleep(30)']
-        with patch.object(self.workspace, 'prepare', return_value=command):
+        with patch.object(self.workspace, 'prepare', return_value=command), \
+                patch.object(self.workspace, 'preflight', return_value={'errors': []}):
             self.workspace.start({'project': 'flight'})
             try:
                 with self.assertRaises(ValueError):
@@ -195,6 +287,65 @@ class WorkspaceTests(unittest.TestCase):
                 self.workspace.stop()
         self.wait_finished()
         self.assertEqual(self.workspace.snapshot()['state'], 'cancelled')
+
+    def test_browser_photo_upload_preserves_active_job_and_rejects_paths(self):
+        import io
+        workspace = self.workspace
+        workspace.state = 'running'; workspace.project = 'flight'; workspace.command = ['active-job']
+        opened = workspace.browser_upload_start('browser-photos')
+        key = opened['upload']; photo = b'\xff\xd8\xff' + b'image-data'
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_start('flight')
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_start('../escape')
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_file(key, '../bad.jpg', io.BytesIO(photo), len(photo))
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_file(key, 'bad.jpg', io.BytesIO(b'not-image'), 9)
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_file(key, 'short.jpg', io.BytesIO(b'short'), 100)
+        self.assertFalse(list((self.root / 'browser-photos/images').glob('*.part')))
+        for i in range(3):
+            workspace.browser_upload_file(key, f'photo_{i}.jpg', io.BytesIO(photo), len(photo))
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_file(key, 'photo_0.jpg', io.BytesIO(photo), len(photo))
+        result = workspace.browser_upload_finish(key, {'engine': 'browser-test'})
+        self.assertEqual(result['files'], 3)
+        manifest = json.loads((self.root / 'browser-photos/browser-import.json').read_text())
+        self.assertTrue(manifest['complete'])
+        self.assertEqual(workspace.state, 'running'); self.assertEqual(workspace.project, 'flight')
+        self.assertEqual(workspace.command, ['active-job'])
+        self.assertCountEqual([f.name for f in (self.root / 'browser-photos/images').iterdir()], ['photo_0.jpg', 'photo_1.jpg', 'photo_2.jpg'])
+        with self.assertRaises(ValueError):
+            workspace.browser_upload_file(key, 'late.jpg', io.BytesIO(photo), len(photo))
+
+    def test_lan_authentication_allowed_hosts_and_origin(self):
+        import base64
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        server.workspace = self.workspace; server.token = 'csrf-test'
+        server.authority = f'127.0.0.1:{server.server_port}'
+        lan = f'10.0.0.10:{server.server_port}'
+        server.allowed_authorities = {server.authority, lan}
+        server.lan_password = 'a-long-test-password'
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
+        def request(method, path, extra=None, data=None):
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port)
+            headers = {'Host': lan, **(extra or {})}
+            connection.request(method, path, json.dumps(data) if data is not None else None, headers)
+            response = connection.getresponse(); body = response.read(); status = response.status
+            connection.close(); return status, body
+        for path in ['/', '/api/projects', '/api/status?since=0', '/sources.js']:
+            self.assertEqual(request('GET', path)[0], 401)
+        self.assertEqual(request('GET', '/', {'Authorization': 'Basic invalid'})[0], 401)
+        auth = {'Authorization': 'Basic ' + base64.b64encode(b'odm:a-long-test-password').decode()}
+        self.assertEqual(request('GET', '/', auth)[0], 200)
+        self.assertEqual(request('GET', '/api/projects', auth)[0], 200)
+        self.assertEqual(request('GET', '/', dict(auth, Host='evil.example'))[0], 403)
+        headers = dict(auth, Origin='http://' + lan, **{'X-ODM-Token': server.token})
+        self.assertEqual(request('POST', '/api/preview', headers, {'project': 'flight'})[0], 200)
+        headers['Origin'] = 'http://evil.example'
+        self.assertEqual(request('POST', '/api/preview', headers, {'project': 'flight'})[0], 403)
 
     def test_http_origin_token_and_static_routes(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -215,6 +366,7 @@ class WorkspaceTests(unittest.TestCase):
             return response.status, body
 
         self.assertEqual(request('GET', '/')[0], 200)
+        self.assertEqual(request('GET', '/sources.js')[0], 200)
         self.assertIn(b'GNU AFFERO GENERAL PUBLIC LICENSE', request('GET', '/LICENSE')[1])
         self.assertEqual(request('GET', '/wasm/gsd.wasm')[1][:4], b'\0asm')
         self.assertEqual(request('GET', '/../run.py')[0], 404)
@@ -238,6 +390,23 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(request('GET', route, headers=dict(download_headers, Range=invalid))[0], 416)
         self.assertEqual(request('POST', '/api/browse', {'path': str(self.root)}, headers)[0], 200)
         self.assertEqual(request('POST', '/api/browse', {'path': str(self.root)})[0], 403)
+        with tempfile.TemporaryDirectory() as folder:
+            other = Path(folder) / 'flight'; (other / 'images').mkdir(parents=True)
+            (other / 'images' / 'external.mp4').write_bytes(b'external-video')
+            (other / 'odm_report').mkdir(); (other / 'odm_report' / 'report.pdf').write_bytes(b'%PDF-external')
+            server.workspace.state = 'running'; server.workspace.project = 'flight'
+            status, body = request('POST', '/api/tool-source', {'path': str(other)}, headers)
+            self.assertEqual(status, 200)
+            source = json.loads(body)['source']
+            scoped = {'source': source, 'project': 'flight'}
+            status, body = request('POST', '/api/media-list', scoped, headers)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)['files'][0]['name'], 'external.mp4')
+            self.assertEqual(request('GET', '/api/media?project=flight&file=external.mp4&source=' + source, headers=download_headers)[1], b'external-video')
+            self.assertEqual(request('GET', '/api/output?project=flight&product=report&source=' + source, headers=download_headers)[1], b'%PDF-external')
+            self.assertEqual(request('POST', '/api/project', scoped, headers)[0], 400)
+            self.assertEqual(server.workspace.state, 'running')
+            self.assertEqual(server.workspace.datasets, self.root)
         server.workspace = Workspace()
         self.assertEqual(json.loads(request('GET', '/api/projects')[1])['projects'], [])
         status, body = request('POST', '/api/dataset', {'path': str(self.root / 'flight')}, headers)
